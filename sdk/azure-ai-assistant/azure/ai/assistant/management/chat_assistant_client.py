@@ -333,6 +333,6 @@ class ChatAssistantClient(BaseChatAssistantClient):
             conversation_thread_client.create_conversation_thread_message(
                 message=full_response, 
                 thread_name=thread_name, 
-                metadata={"chat_assistant": self._name}
+                role="assistant"
             )
             logger.info("Messages updated in conversation.")

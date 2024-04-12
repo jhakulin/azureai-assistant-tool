@@ -227,6 +227,7 @@ class ConversationThreadClient:
             thread_name : str,
             file_paths : Optional[list] = None,
             additional_instructions : Optional[str] = None,
+            role : Optional[str] = "user",
             timeout : Optional[float] = None,
             metadata : Optional[dict] = None
     ) -> None:
@@ -241,8 +242,12 @@ class ConversationThreadClient:
         :type file_paths: list, optional
         :param additional_instructions: The additional instructions to add to the message.
         :type additional_instructions: str, optional
+        :param role: The role of the message sender.
+        :type role: str, optional
         :param timeout: The HTTP request timeout in seconds.
         :type timeout: float, optional
+        :param metadata: The metadata to add to the message.
+        :type metadata: dict, optional
         """
         try:
 
@@ -258,7 +263,7 @@ class ConversationThreadClient:
             # Create the message with file IDs
             self._ai_client.beta.threads.messages.create(
                 thread_id,
-                role="user",
+                role=role,
                 metadata=metadata,
                 content=message,
                 file_ids=file_ids,
