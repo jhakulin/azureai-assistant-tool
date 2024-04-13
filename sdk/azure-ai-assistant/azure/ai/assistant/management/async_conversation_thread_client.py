@@ -189,14 +189,13 @@ class AsyncConversationThreadClient:
         for message in messages:
             logger.info(f"Processing message: {message}")
             if message.role == "assistant":
-                sender_name = self._assistant_config_manager.get_assistant_name_by_assistant_id(message.assistant_id)
+                if message.assistant_id is None:
+                    sender_name = message.metadata.get("chat_assistant", "assistant")
+                else:
+                    sender_name = self._assistant_config_manager.get_assistant_name_by_assistant_id(message.assistant_id)
                 if sender_name is None:
                     sender_name = "assistant"
             if message.role == "user":
-                if message.metadata:
-                    sender_name = message.metadata.get("chat_assistant", "assistant")
-                    message.role = "assistant"
-                else:
                     sender_name = "user"
 
             for content_item in message.content:

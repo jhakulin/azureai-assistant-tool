@@ -271,6 +271,7 @@ class AsyncChatAssistantClient(BaseChatAssistantClient):
                 await conversation_thread_client.create_conversation_thread_message(
                     response_message.content,
                     thread_name,
+                    role="assistant",
                     metadata={"chat_assistant": self._name}
                 )
             return False
@@ -352,6 +353,7 @@ class AsyncChatAssistantClient(BaseChatAssistantClient):
             await conversation_thread_client.create_conversation_thread_message(
                 message=full_response, 
                 thread_name=thread_name, 
-                role="assistant"
+                role="assistant",
+                metadata={"chat_assistant": self._name}
             )
             logger.info("Messages updated in conversation.")
