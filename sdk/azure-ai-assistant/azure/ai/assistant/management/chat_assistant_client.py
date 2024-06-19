@@ -9,6 +9,8 @@ from azure.ai.assistant.management.base_chat_assistant_client import BaseChatAss
 from azure.ai.assistant.management.exceptions import EngineError, InvalidJSONError
 from azure.ai.assistant.management.logger_module import logger
 
+from azure.ai.inference import ChatCompletionsClient
+
 from typing import Optional
 from datetime import datetime
 import json, uuid, yaml
@@ -218,21 +220,37 @@ class ChatAssistantClient(BaseChatAssistantClient):
                 top_p = None if text_completion_config is None else text_completion_config.top_p
                 response_format = None if text_completion_config is None else {'type': text_completion_config.response_format}
 
-                response = self._ai_client.chat.completions.create(
-                    model=self._assistant_config.model,
-                    messages=self._messages,
-                    tools=self._tools,
-                    tool_choice=None if self._tools is None else "auto",
-                    stream=stream,
-                    temperature=temperature,
-                    seed=seed,
-                    frequency_penalty=frequency_penalty,
-                    max_tokens=max_tokens,
-                    presence_penalty=presence_penalty,
-                    response_format=response_format,
-                    top_p=top_p,
-                    timeout=timeout
-                )
+                if isinstance(self._ai_client, ChatCompletionsClient):
+                    response = self._ai_client.complete(
+                        messages=self._messages,
+                        # tools=self._tools,
+                        # tool_choice=None if self._tools is None else "auto",
+                        # stream=stream,
+                        # temperature=temperature,
+                        # seed=seed,
+                        # frequency_penalty=frequency_penalty,
+                        # max_tokens=max_tokens,
+                        # presence_penalty=presence_penalty,
+                        # response_format=response_format,
+                        # top_p=top_p,
+                        # timeout=timeout
+                    )
+                else:
+                    response = self._ai_client.chat.completions.create(
+                        model=self._assistant_config.model,
+                        messages=self._messages,
+                        tools=self._tools,
+                        tool_choice=None if self._tools is None else "auto",
+                        stream=stream,
+                        temperature=temperature,
+                        seed=seed,
+                        frequency_penalty=frequency_penalty,
+                        max_tokens=max_tokens,
+                        presence_penalty=presence_penalty,
+                        response_format=response_format,
+                        top_p=top_p,
+                        timeout=timeout
+                    )
 
                 if response and stream:
                     continue_processing = self._handle_streaming_response(response, thread_name, run_id)
