@@ -5,7 +5,7 @@
 # For more details on PySide6's license, see <https://www.qt.io/licensing>
 
 from PySide6 import QtGui
-from PySide6.QtWidgets import QDialog, QGroupBox, QSplitter, QComboBox, QSpinBox, QListWidgetItem, QTabWidget, QSizePolicy, QHBoxLayout, QWidget, QFileDialog, QListWidget, QLineEdit, QVBoxLayout, QPushButton, QLabel, QCheckBox, QTextEdit, QMessageBox, QSlider
+from PySide6.QtWidgets import QDialog, QGroupBox, QSplitter, QComboBox, QSpinBox, QListWidgetItem, QTabWidget, QSizePolicy, QHBoxLayout, QWidget, QFileDialog, QListWidget, QLineEdit, QVBoxLayout, QPushButton, QLabel, QCheckBox, QTextEdit, QMessageBox, QSlider, QLineEdit
 from PySide6.QtCore import Qt, QSize, Signal
 from PySide6.QtGui import QIcon, QTextOption
 
@@ -35,7 +35,7 @@ class CustomSpinBox(QSpinBox):
 
 
 class AssistantConfigDialog(QDialog):
-    assistantConfigSubmitted = Signal(str, str, str)
+    assistantConfigSubmitted = Signal(str, str, str, str, str)
 
     def __init__(
             self, 
@@ -157,9 +157,15 @@ class AssistantConfigDialog(QDialog):
         # AI client selection
         self.aiClientLabel = QLabel('AI Client:')
         self.aiClientComboBox = QComboBox()
-        ai_client_type_names = [client_type.name for client_type in AIClientType]
+        if self.assistant_type == "assistant":
+            ai_client_type_names = [client_type.name for client_type in AIClientType if client_type != AIClientType.AZURE_INFERENCE]
+        else:
+            ai_client_type_names = [client_type.name for client_type in AIClientType]
         self.aiClientComboBox.addItems(ai_client_type_names)
         active_ai_client_type = self.main_window.active_ai_client_type
+        if self.assistant_type == "assistant":
+            if active_ai_client_type == AIClientType.AZURE_INFERENCE:
+                active_ai_client_type = AIClientType.AZURE_OPEN_AI
         self.aiClientComboBox.setCurrentIndex(ai_client_type_names.index(active_ai_client_type.name))
         self.aiClientComboBox.currentIndexChanged.connect(self.ai_client_selection_changed)
         configLayout.addWidget(self.aiClientLabel)
@@ -242,6 +248,16 @@ class AssistantConfigDialog(QDialog):
         )
         configLayout.addWidget(self.modelLabel)
         configLayout.addWidget(self.modelComboBox)
+
+        # Key field for Azure Inference
+        self.keyLabel = QLabel('Key:')
+        self.keyEdit = QLineEdit()
+        self.keyLabel.setVisible(False)
+        self.keyEdit.setVisible(False)
+        self.keyEdit.setEchoMode(QLineEdit.EchoMode.PasswordEchoOnEdit)
+
+        configLayout.addWidget(self.keyLabel)
+        configLayout.addWidget(self.keyEdit)
 
         # Create as new assistant checkbox
         self.createAsNewCheckBox = QCheckBox("Create as New Assistant")
@@ -532,6 +548,13 @@ class AssistantConfigDialog(QDialog):
 
     def ai_client_selection_changed(self):
         self.ai_client_type = AIClientType[self.aiClientComboBox.currentText()]
+
+        is_azure_inference = self.ai_client_type == AIClientType.AZURE_INFERENCE
+        self.keyLabel.setVisible(is_azure_inference)
+        self.keyEdit.setVisible(is_azure_inference)
+        if not is_azure_inference:
+            self.keyEdit.clear()
+
         self.update_assistant_combobox()
         self.update_model_combobox()
 
@@ -569,9 +592,14 @@ class AssistantConfigDialog(QDialog):
             logger.error(f"Error getting models from AI client: {e}")
         finally:
             if self.ai_client_type == AIClientType.OPEN_AI:
+                self.modelLabel.setText('Model:')
                 self.modelComboBox.setToolTip("Select a model ID supported for assistant from the list")
             elif self.ai_client_type == AIClientType.AZURE_OPEN_AI:
+                self.modelLabel.setText('Model:')
                 self.modelComboBox.setToolTip("Select a model deployment name from the Azure OpenAI resource")
+            elif self.ai_client_type == AIClientType.AZURE_INFERENCE:
+                self.modelLabel.setText('Endpoint:')
+                self.modelComboBox.setToolTip("Select an endpoint for an Azure model deployment")
 
     def assistant_selection_changed(self):
         selected_assistant = self.assistantComboBox.currentText()
@@ -961,13 +989,19 @@ class AssistantConfigDialog(QDialog):
             'completion_settings': completion_settings
         }
 
+        endpoint = self.modelComboBox.currentText() if self.ai_client_type == AIClientType.AZURE_INFERENCE else None
+        key = self.keyEdit.text() if self.ai_client_type == AIClientType.AZURE_INFERENCE else None
+
         # Validation and emission of the configuration
-        if not config['name'] or not config['instructions'] or not config['model']:
+        if self.ai_client_type == AIClientType.AZURE_INFERENCE and (not key or not endpoint or not config['name'] or not config['instructions']):
+            QMessageBox.information(self, "Missing Fields", "Name, Instructions, Endpoint, and Key are required fields.")
+            return
+        elif not config['name'] or not config['instructions'] or not config['model']:
             QMessageBox.information(self, "Missing Fields", "Name, Instructions, and Model are required fields.")
             return
 
         assistant_config_json = json.dumps(config, indent=4)
-        self.assistantConfigSubmitted.emit(assistant_config_json, self.aiClientComboBox.currentText(), self.assistant_type)
+        self.assistantConfigSubmitted.emit(assistant_config_json, self.aiClientComboBox.currentText(), self.assistant_type, endpoint, key)
 
 
 class ExportAssistantDialog(QDialog):

@@ -20,6 +20,7 @@ from gui.settings_dialogs import ClientSettingsDialog, GeneralSettingsDialog
 from gui.assistant_client_manager import AssistantClientManager
 from gui.log_broadcaster import LogBroadcaster
 
+from azure.core.credentials import AzureKeyCredential
 
 class AssistantsMenu:
     def __init__(self, main_window):
@@ -63,10 +64,16 @@ class AssistantsMenu:
         # Show the dialog non-modally
         self.dialog.show()
 
-    def on_assistant_config_submitted(self, assistant_config_json, ai_client_type, assistant_type):
+    def on_assistant_config_submitted(self, assistant_config_json, ai_client_type, assistant_type, endpoint, key):
         try:
             if assistant_type == "chat_assistant":
-                assistant_client = ChatAssistantClient.from_json(assistant_config_json, self.main_window, self.main_window.connection_timeout)
+                client_args = {}
+                if ai_client_type == "AZURE_INFERENCE":
+                    client_args = {
+                        "endpoint": endpoint, 
+                        "credential": AzureKeyCredential(key), 
+                        "headers": {"api-key": key}}
+                assistant_client = ChatAssistantClient.from_json(assistant_config_json, self.main_window, self.main_window.connection_timeout, **client_args)
             else:
                 assistant_client = AssistantClient.from_json(assistant_config_json, self.main_window, self.main_window.connection_timeout)
             self.assistant_client_manager.register_client(assistant_client.name, assistant_client)

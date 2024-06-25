@@ -223,17 +223,16 @@ class ChatAssistantClient(BaseChatAssistantClient):
                 if isinstance(self._ai_client, ChatCompletionsClient):
                     response = self._ai_client.complete(
                         messages=self._messages,
-                        # tools=self._tools,
-                        # tool_choice=None if self._tools is None else "auto",
-                        # stream=stream,
-                        # temperature=temperature,
-                        # seed=seed,
-                        # frequency_penalty=frequency_penalty,
-                        # max_tokens=max_tokens,
-                        # presence_penalty=presence_penalty,
-                        # response_format=response_format,
-                        # top_p=top_p,
-                        # timeout=timeout
+                        tools=self._tools,
+                        tool_choice=None if self._tools is None else "auto",
+                        stream=stream,
+                        temperature=temperature,
+                        seed=seed,
+                        frequency_penalty=frequency_penalty,
+                        max_tokens=max_tokens,
+                        presence_penalty=presence_penalty,
+                        response_format=response_format,
+                        top_p=top_p,
                     )
                 else:
                     response = self._ai_client.chat.completions.create(
