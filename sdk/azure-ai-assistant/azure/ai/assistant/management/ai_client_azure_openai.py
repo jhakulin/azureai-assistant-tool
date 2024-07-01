@@ -25,3 +25,13 @@ class AzureOpenAIClient(BaseAiClient):
         :return: Completion results from the Azure OpenAI service.
         """
         return self._ai_client.chat.completions.create(**kwargs)
+
+    @property
+    def ai_client(self):
+        """
+        Returns the underlying AI client.
+
+        :return: The AI client.
+        :rtype: AzureOpenAI
+        """
+        return self._ai_client 

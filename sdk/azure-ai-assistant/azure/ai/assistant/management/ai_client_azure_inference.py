@@ -31,3 +31,13 @@ class AzureInferenceClient(BaseAiClient):
         :return: Completion results from the Azure inference service.
         """
         return self._ai_client.complete(**kwargs)
+    
+    @property
+    def ai_client(self):
+        """
+        Returns the underlying AI client.
+
+        :return: The AI client.
+        :rtype: ChatCompletionsClient
+        """
+        return self._ai_client
