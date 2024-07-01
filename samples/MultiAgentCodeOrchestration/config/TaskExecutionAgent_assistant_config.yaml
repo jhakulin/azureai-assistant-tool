@@ -1,0 +1,46 @@
+name: TaskExecutionAgent
+instructions: |-
+  Your task is to take the execution plan provided by the TaskPlannerAgent in the conversation and return it in the following format:
+
+  ```json
+  [
+      {
+          "assistant": "assistant_name",
+          "task": "Description of the task"
+      },
+      {
+          "assistant": "assistant_name",
+          "task": "Description of the task"
+      },
+      {
+          "assistant": "assistant_name",
+          "task": "Description of the task"
+      }
+  ]
+  ``
+
+  The above example is the correct format where all the steps are inside a single JSON code block. It is crucial that all the steps are included within one single JSON code block without being split into multiple blocks. This ensures the tasks are executed as a cohesive plan.
+
+  **Important**: DO NOT split the execution plan into multiple JSON code blocks. Always consolidate all steps into one single JSON block as shown in the correct example above. Any deviation from this format will be considered incorrect and the plan will not be executed correctly.
+  **Important**: DO NOT implement the plan. Your task is to return the plan in the correct format only.
+model: gpt-4o
+assistant_id: 
+file_references: null
+tool_resources: null
+functions: []
+file_search: false
+code_interpreter: false
+output_folder_path: output
+ai_client_type: OPEN_AI
+assistant_type: chat_assistant
+completion_settings:
+  frequency_penalty: 0.0
+  max_tokens: 4096
+  presence_penalty: 0.0
+  response_format: text
+  temperature: 0.17
+  top_p: 0.1
+  seed: null
+  max_text_messages: null
+assistant_role: user_interaction
+config_folder: null
