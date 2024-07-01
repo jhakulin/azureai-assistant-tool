@@ -6,7 +6,7 @@ from azure.ai.assistant.management.base_ai_client import BaseAiClient
 from azure.ai.inference.aio import ChatCompletionsClient as AsyncChatCompletionsClient
 from azure.core.credentials import AzureKeyCredential
 
-class AzureInferenceClient(BaseAiClient):
+class AsyncAzureInferenceClient(BaseAiClient):
     """
     A class that manages Azure Inference Clients
 

@@ -5,7 +5,7 @@ from azure.ai.assistant.management.base_ai_client import BaseAiClient
 
 from openai import AsyncOpenAI
 
-class OpenAIClient(BaseAiClient):
+class AsyncOpenAIClient(BaseAiClient):
     def __init__(self, **client_args) -> None:
         """
         A class that manages OpenAI Clients

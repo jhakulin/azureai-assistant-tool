@@ -10,6 +10,12 @@ import os
 from typing import Union
 from azure.ai.assistant.management.logger_module import logger
 from azure.ai.assistant.management.exceptions import EngineError
+from azure.ai.assistant.management.ai_client_azure_inference import AzureInferenceClient
+from azure.ai.assistant.management.ai_client_azure_openai import AzureOpenAIClient
+from azure.ai.assistant.management.ai_client_openai import OpenAIClient
+from azure.ai.assistant.management.async_ai_client_azure_inference import AsyncAzureInferenceClient
+from azure.ai.assistant.management.async_ai_client_azure_openai import AsyncAzureOpenAIClient
+from azure.ai.assistant.management.async_ai_client_openai import AsyncOpenAIClient
 
 
 class AIClientType(Enum):
@@ -65,8 +71,10 @@ class AIClientFactory:
             self, 
             client_type: Union[AIClientType, AsyncAIClientType],
             api_version: str = None,
+            key: str = None,
+            endpoint: str = None,
             **client_args
-    ) -> Union[OpenAI, AzureOpenAI, AsyncOpenAI, AsyncAzureOpenAI, ChatCompletionsClient, AsyncChatCompletionsClient]:
+    ) -> Union[OpenAIClient, AzureOpenAIClient, AzureInferenceClient, AsyncOpenAIClient, AsyncAzureOpenAIClient, AsyncAzureInferenceClient]:
         """
         Get an AI client, synchronous or asynchronous, based on the given type and API version.
 
@@ -76,15 +84,19 @@ class AIClientFactory:
         :type api_version: str
         :param client_args: Additional keyword arguments for configuring the AI client.
         :type client_args: Dict
+        :param key: The Azure API key to be used with the Azure Inference client.
+        :type key: str
+        :param endpoint: The Azure endpoint to be used with the Azure Inference client.
+        :type endpoint: str
         
         :return: The AI client.
-        :rtype: Union[OpenAI, AzureOpenAI, AsyncOpenAI, AsyncAzureOpenAI]
+        :rtype: Union[OpenAIClient, AzureOpenAIClient, AzureInferenceClient, AsyncOpenAIClient, AsyncAzureOpenAIClient, AsyncAzureInferenceClient]
         """
         api_version = os.getenv("AZURE_OPENAI_API_VERSION", api_version) or "2024-05-01-preview"
         client_key = (client_type, api_version)
         if client_key in self._clients:
             # if client is closed, recreate client
-            if not isinstance(client_type, AIClientType) and self._clients[client_key].is_closed():
+            if not client_type == AIClientType.AZURE_INFERENCE and self._clients[client_key].ai_client.is_closed():
                 logger.info(f"Recreating client for {client_key}")
                 del self._clients[client_key]
             else:
@@ -92,19 +104,19 @@ class AIClientFactory:
 
         if isinstance(client_type, AIClientType):
             if client_type == AIClientType.AZURE_OPEN_AI:
-                self._clients[client_key] = AzureOpenAI(api_version=api_version, azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"), **client_args)
+                self._clients[client_key] = AzureOpenAIClient(**client_args)
             elif client_type == AIClientType.OPEN_AI:
-                self._clients[client_key] = OpenAI(**client_args)
+                self._clients[client_key] = OpenAIClient(**client_args)
             elif client_type == AIClientType.AZURE_INFERENCE:
-                self._clients[client_key] = ChatCompletionsClient(**client_args)
+                self._clients[client_key] = AzureInferenceClient(key=key, endpoint=endpoint, **client_args)
                 
         elif isinstance(client_type, AsyncAIClientType):
             if client_type == AsyncAIClientType.AZURE_OPEN_AI:
-                self._clients[client_key] = AsyncAzureOpenAI(api_version=api_version, azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"), **client_args)
+                self._clients[client_key] = AsyncAzureOpenAIClient(**client_args)
             elif client_type == AsyncAIClientType.OPEN_AI:
-                self._clients[client_key] = AsyncOpenAI(**client_args)
+                self._clients[client_key] = AsyncOpenAIClient(**client_args)
             elif client_type == AIClientType.AZURE_INFERENCE:
-                self._clients[client_key] = AsyncChatCompletionsClient(**client_args)
+                self._clients[client_key] = AsyncAzureInferenceClient(key=key, endpoint=endpoint, **client_args)
         else:
             raise ValueError(f"Invalid client type: {client_type}")
 
