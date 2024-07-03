@@ -175,19 +175,19 @@ class AssistantClient(BaseAssistantClient):
             if assistant_config.tool_resources and assistant_config.tool_resources.code_interpreter_files:
                 logger.info(f"Code interpreter files in local: {assistant_config.tool_resources.code_interpreter_files}")
                 for file_id in code_interpreter_file_ids_cloud:
-                    file_name = self._ai_client.files.retrieve(file_id).filename
+                    file_name = self._ai_client.ai_client.files.retrieve(file_id).filename
                     logger.info(f"Code interpreter file id: {file_id}, name: {file_name} in cloud")
 
             file_search_vs_ids_cloud = []
             if assistant.tool_resources and assistant.tool_resources.file_search:
                 file_search_vs_ids_cloud = assistant.tool_resources.file_search.vector_store_ids
-                files_in_vs_cloud = list(self._ai_client.beta.vector_stores.files.list(file_search_vs_ids_cloud[0], timeout=timeout))
+                files_in_vs_cloud = list(self._ai_client.ai_client.beta.vector_stores.files.list(file_search_vs_ids_cloud[0], timeout=timeout))
                 file_search_file_ids_cloud = [file.id for file in files_in_vs_cloud]
 
             if assistant_config.tool_resources and assistant_config.tool_resources.file_search_vector_stores:
                 logger.info(f"File search vector stores in local: {assistant_config.tool_resources.file_search_vector_stores}")
                 for file_id in file_search_file_ids_cloud:
-                    file_name = self._ai_client.files.retrieve(file_id).filename
+                    file_name = self._ai_client.ai_client.files.retrieve(file_id).filename
                     logger.info(f"File search file id: {file_id}, name: {file_name} in cloud")
 
             #assistant_config.tool_resources = ToolResourcesConfig(
@@ -260,7 +260,7 @@ class AssistantClient(BaseAssistantClient):
             instructions = self._replace_file_references_with_content(assistant_config)
             tools_resources = self._create_tool_resources(assistant_config)
 
-            assistant = self._ai_client.beta.assistants.create(
+            assistant = self._ai_client.ai_client.beta.assistants.create(
                 name=assistant_config.name,
                 instructions=instructions,
                 tool_resources=tools_resources,
@@ -319,7 +319,7 @@ class AssistantClient(BaseAssistantClient):
             timeout: Optional[float] = None
     ) -> str:
         try:
-            client_vs = self._ai_client.beta.vector_stores.create(
+            client_vs = self._ai_client.ai_client.beta.vector_stores.create(
                 name=vector_store.name,
                 file_ids = list(vector_store.files.values()),
                 metadata=vector_store.metadata,
@@ -359,7 +359,7 @@ class AssistantClient(BaseAssistantClient):
             if assistant.tool_resources.file_search:
                 existing_vs_ids = assistant.tool_resources.file_search.vector_store_ids
                 if existing_vs_ids:
-                    all_files_in_vs = list(self._ai_client.beta.vector_stores.files.list(existing_vs_ids[0], timeout=timeout))
+                    all_files_in_vs = list(self._ai_client.ai_client.beta.vector_stores.files.list(existing_vs_ids[0], timeout=timeout))
                     existing_file_ids = set([file.id for file in all_files_in_vs])
 
             # if there are new files to upload or delete, recreate the vector store
@@ -428,7 +428,7 @@ class AssistantClient(BaseAssistantClient):
     ):
         try:
             assistant_id = assistant_config.assistant_id
-            self._ai_client.beta.assistants.delete(
+            self._ai_client.ai_client.beta.assistants.delete(
                 assistant_id=assistant_id,
                 timeout=timeout
             )
@@ -486,14 +486,14 @@ class AssistantClient(BaseAssistantClient):
             logger.info(f"Creating a run for assistant: {self.assistant_config.assistant_id} and thread: {thread_id}")
             # Azure OpenAI does not support all completion parameters currently
             if text_completion_config == None:
-                run = self._ai_client.beta.threads.runs.create(
+                run = self._ai_client.ai_client.beta.threads.runs.create(
                     thread_id=thread_id,
                     assistant_id=self.assistant_config.assistant_id,
                     additional_instructions=additional_instructions,
                     timeout=timeout
                 )
             else:
-                run = self._ai_client.beta.threads.runs.create(
+                run = self._ai_client.ai_client.beta.threads.runs.create(
                     thread_id=thread_id,
                     assistant_id=self.assistant_config.assistant_id,
                     additional_instructions=additional_instructions,
@@ -518,7 +518,7 @@ class AssistantClient(BaseAssistantClient):
                 time.sleep(0.5)
 
                 logger.debug(f"Retrieving run: {run.id} with status: {run.status}")
-                run = self._ai_client.beta.threads.runs.retrieve(
+                run = self._ai_client.ai_client.beta.threads.runs.retrieve(
                     thread_id=thread_id,
                     run_id=run.id,
                     timeout=timeout
@@ -531,7 +531,7 @@ class AssistantClient(BaseAssistantClient):
                 logger.info(f"Processing run: {run.id} with status: {run.status}")
 
                 if self._cancel_run_requested.is_set():
-                    self._ai_client.beta.threads.runs.cancel(thread_id=thread_id, run_id=run.id, timeout=timeout)
+                    self._ai_client.ai_client.beta.threads.runs.cancel(thread_id=thread_id, run_id=run.id, timeout=timeout)
                     self._cancel_run_requested.clear()
                     logger.info("Processing run cancelled by user, exiting the loop.")
                     return None
@@ -585,7 +585,7 @@ class AssistantClient(BaseAssistantClient):
             text_completion_config = self._assistant_config.text_completion_config
 
             if text_completion_config is None:
-                with self._ai_client.beta.threads.runs.stream(
+                with self._ai_client.ai_client.beta.threads.runs.stream(
                     thread_id=thread_id,
                     assistant_id=self._assistant_config.assistant_id,
                     additional_instructions=additional_instructions,
@@ -594,7 +594,7 @@ class AssistantClient(BaseAssistantClient):
                 ) as stream:
                     stream.until_done()
             else:
-                with self._ai_client.beta.threads.runs.stream(
+                with self._ai_client.ai_client.beta.threads.runs.stream(
                     thread_id=thread_id,
                     assistant_id=self._assistant_config.assistant_id,
                     additional_instructions=additional_instructions,
@@ -618,7 +618,7 @@ class AssistantClient(BaseAssistantClient):
         logger.info("Handling required action")
         if tool_calls is None:
             logger.error("Processing run requires tool call action but no tool calls provided.")
-            self._ai_client.beta.threads.runs.cancel(thread_id=thread_id, run_id=run_id, timeout=timeout)
+            self._ai_client.ai_client.beta.threads.runs.cancel(thread_id=thread_id, run_id=run_id, timeout=timeout)
             return False
 
         tool_outputs = self._process_tool_calls(name, run_id, tool_calls)
@@ -627,7 +627,7 @@ class AssistantClient(BaseAssistantClient):
 
         if stream:
             logger.info("Submitting tool outputs with stream")
-            with self._ai_client.beta.threads.runs.submit_tool_outputs_stream(
+            with self._ai_client.ai_client.beta.threads.runs.submit_tool_outputs_stream(
                 thread_id=thread_id,
                 run_id=run_id,
                 tool_outputs=tool_outputs,
@@ -636,7 +636,7 @@ class AssistantClient(BaseAssistantClient):
             ) as stream:
                 stream.until_done()
         else:
-            self._ai_client.beta.threads.runs.submit_tool_outputs(
+            self._ai_client.ai_client.beta.threads.runs.submit_tool_outputs(
                 thread_id=thread_id,
                 run_id=run_id,
                 tool_outputs=tool_outputs,
@@ -669,7 +669,7 @@ class AssistantClient(BaseAssistantClient):
     ):
         try:
             logger.info(f"Retrieving assistant with ID: {assistant_id}")
-            assistant = self._ai_client.beta.assistants.retrieve(
+            assistant = self._ai_client.ai_client.beta.assistants.retrieve(
                 assistant_id=assistant_id,
                 timeout=timeout
             )
@@ -691,13 +691,13 @@ class AssistantClient(BaseAssistantClient):
         file_ids_to_delete = existing_file_ids - updated_file_ids
         logger.info(f"Deleting files: {file_ids_to_delete} from assistant: {assistant_config.name} vector store: {vector_store_id}")
         for file_id in file_ids_to_delete:
-            file_deletion_status = self._ai_client.beta.vector_stores.files.delete(
+            file_deletion_status = self._ai_client.ai_client.beta.vector_stores.files.delete(
                 vector_store_id=vector_store_id,
                 file_id=file_id,
                 timeout=timeout
             )
             if delete_from_service:
-                file_deletion_status = self._ai_client.files.delete(
+                file_deletion_status = self._ai_client.ai_client.files.delete(
                     file_id=file_id,
                     timeout=timeout
                 )
@@ -713,7 +713,7 @@ class AssistantClient(BaseAssistantClient):
         for file_path, file_id in updated_files.items():
             if file_id is None:
                 logger.info(f"Uploading file: {file_path} for assistant: {assistant_config.name}")
-                file = self._ai_client.beta.vector_stores.files.upload_and_poll(
+                file = self._ai_client.ai_client.beta.vector_stores.files.upload_and_poll(
                     vector_store_id=vector_store_id,
                     file=open(file_path, "rb")
                 )
@@ -730,7 +730,7 @@ class AssistantClient(BaseAssistantClient):
         file_ids_to_delete = existing_file_ids - updated_file_ids
         logger.info(f"Deleting files: {file_ids_to_delete} for assistant: {assistant_config.name}")
         for file_id in file_ids_to_delete:
-            file_deletion_status = self._ai_client.files.delete(
+            file_deletion_status = self._ai_client.ai_client.files.delete(
                 file_id=file_id,
                 timeout=timeout
             )
@@ -745,7 +745,7 @@ class AssistantClient(BaseAssistantClient):
         for file_path, file_id in updated_files.items():
             if file_id is None:
                 logger.info(f"Uploading file: {file_path} for assistant: {assistant_config.name}")
-                file = self._ai_client.files.create(
+                file = self._ai_client.ai_client.files.create(
                     file=open(file_path, "rb"),
                     purpose='assistants',
                     timeout=timeout
@@ -764,7 +764,7 @@ class AssistantClient(BaseAssistantClient):
             tools_resources = self._update_tool_resources(assistant_config)
 
             # TODO update the assistant with the new configuration only if there are changes
-            self._ai_client.beta.assistants.update(
+            self._ai_client.ai_client.beta.assistants.update(
                 assistant_id=assistant_config.assistant_id,
                 name=assistant_config.name,
                 instructions=instructions,

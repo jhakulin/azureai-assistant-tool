@@ -14,10 +14,12 @@ class AzureInferenceClient(BaseAiClient):
     :type client_args: Dict
     """
     def __init__(self, **client_args) -> None:
-        self._ai_client = ChatCompletionsClient(endpoint=client_args.get('endpoint'), 
-                                                credential=AzureKeyCredential(client_args.get('key')), 
-                                                headers={"api-key": client_args.get('key')}, 
-                                                **client_args)
+        self._ai_client = ChatCompletionsClient(
+            endpoint=client_args.get('endpoint'), 
+            credential=AzureKeyCredential(client_args.get('key')), 
+            headers={"api-key": client_args.get('key')}, 
+            **client_args,
+        )
     
     def create_completions(self, **kwargs):
         """

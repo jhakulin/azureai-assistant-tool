@@ -26,6 +26,15 @@ class AzureOpenAIClient(BaseAiClient):
         """
         return self._ai_client.chat.completions.create(**kwargs)
 
+    def create_thread(self, **kwargs):
+        """
+        Creates a thread using the Azure OpenAI service.
+
+        :param kwargs: Keyword arguments for the thread.
+        :return: Created thread.
+        """
+        return self._ai_client.beta.threads.create(**kwargs)
+
     @property
     def ai_client(self):
         """
