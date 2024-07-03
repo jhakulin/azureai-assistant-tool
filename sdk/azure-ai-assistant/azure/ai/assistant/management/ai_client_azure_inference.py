@@ -10,18 +10,14 @@ class AzureInferenceClient(BaseAiClient):
     """
     A class that manages Azure Inference Clients
 
-    :param key: The Azure API key.
-    :type key: str
-    :param endpoint: The Azure endpoint.
-    :type endpoint: str
     :param client_args: Additional keyword arguments for configuring the client.
     :type client_args: Dict
     """
-    def __init__(self, 
-                 key: str, 
-                 endpoint: str, 
-                 **client_args) -> None:
-        self._ai_client = ChatCompletionsClient(endpoint=endpoint, credential=AzureKeyCredential(key), headers={"api-key": key}, **client_args)
+    def __init__(self, **client_args) -> None:
+        self._ai_client = ChatCompletionsClient(endpoint=client_args.get('endpoint'), 
+                                                credential=AzureKeyCredential(client_args.get('key')), 
+                                                headers={"api-key": client_args.get('key')}, 
+                                                **client_args)
     
     def create_completions(self, **kwargs):
         """
