@@ -616,6 +616,54 @@ class ToolResourcesConfig:
         """
         self._file_search_vector_stores = value
 
+class AIClientConfig:
+    """
+    A class representing the configuration for an AI client.
+
+    :param endpoint: The AI client endpoint.
+    :type endpoint: str
+    :param key: The AI client key.
+    :type key: str
+    """
+    def __init__(self, 
+                 endpoint : str, 
+                 key : str
+    ) -> None:
+        self._endpoint = endpoint
+        self._key = key
+
+    @property
+    def endpoint(self) -> str:
+        """
+        Get the endpoint.
+
+        :return: The endpoint.
+        :rtype: str
+        """
+        return self._endpoint
+    
+    @property
+    def key(self) -> str:
+        """
+        Get the key.
+
+        :return: The key.
+        :rtype: str
+        """
+        return self._key
+
+    def to_dict(self) -> dict:
+        """
+        Convert the AI client configuration to a dictionary.
+
+        :return: The AI client configuration as a dictionary.
+        :rtype: dict
+        """
+        return {
+            'endpoint': self.endpoint,
+            'key': self.key
+        }
+
 
 class AssistantConfig:
     """
@@ -658,6 +706,13 @@ class AssistantConfig:
 
         # Config folder for local assistant and threads configuration
         self._config_folder = None
+
+        #initialize AI client config based on ai client type
+        self._ai_client_config = self._setup_ai_client(config_data)
+    
+    def _setup_ai_client(self, config_data):
+        if self._ai_client_type == 'AZURE_INFERENCE':
+            return AIClientConfig(endpoint=config_data['endpoint'], key=config_data['key'])
 
     def _setup_completion_settings(self, config_data):
         if config_data.get('completion_settings', None) is not None:
@@ -791,6 +846,7 @@ class AssistantConfig:
         self._config_data['assistant_role'] = self._assistant_role
         self._config_data['completion_settings'] = self._text_completion_config.to_dict() if self._text_completion_config is not None else None
         self._config_data['config_folder'] = self._config_folder
+        self._config_data['ai_client_config'] = self._ai_client_config.to_dict() if self._ai_client_config is not None else None
         return self._config_data
 
     def _get_function_configs(self):
@@ -1051,3 +1107,13 @@ class AssistantConfig:
 
     def _remove_trailing_spaces(self, text):
         return '\n'.join(line.rstrip() for line in text.splitlines())
+    
+    @property
+    def ai_client_config(self) -> AIClientConfig:
+        """
+        Get the AI client configuration.
+        
+        :return: The AI client configuration.
+        :rtype: AIClientConfig
+        """
+        return self._ai_client_config
