@@ -19,10 +19,7 @@ from azure.ai.assistant.management.async_ai_client_azure_inference import AsyncA
 from azure.ai.assistant.management.async_ai_client_azure_openai import AsyncAzureOpenAIClient
 from azure.ai.assistant.management.async_ai_client_openai import AsyncOpenAIClient
 
-from openai import AzureOpenAI, OpenAI, AsyncAzureOpenAI, AsyncOpenAI
 from typing import Union
-from azure.ai.inference import ChatCompletionsClient
-from azure.ai.inference.aio import ChatCompletionsClient as AsyncChatCompletionsClient
 
 import re, yaml, copy
 import json, importlib, sys, os
@@ -66,16 +63,16 @@ class BaseAssistantClient:
             self._validate_config_data(self._config_data)
             self._name = self._config_data["name"]
             self._ai_client_type = self._get_ai_client_type(self._config_data["ai_client_type"], async_mode)
-            self._ai_client : Union[OpenAIClient, AsyncOpenAIClient, AzureOpenAIClient, AsyncAzureOpenAIClient, AzureInferenceClient, AsyncAzureInferenceClient] = self._get_ai_client(self._ai_client_type, **client_args)
+            self._ai_client : Union[OpenAIClient, AsyncOpenAIClient, AzureOpenAIClient, AsyncAzureOpenAIClient, AzureInferenceClient, AsyncAzureInferenceClient] = self._get_ai_client(self._ai_client_type, **self._config_data.get('ai_client_config'), **client_args) if self._ai_client_type == AIClientType.AZURE_INFERENCE else self._get_ai_client(self._ai_client_type, **client_args)
             config_folder = None
             if "config_folder" in self._config_data:
                 config_folder = self._config_data["config_folder"]
             if async_mode:
                 self._callbacks = callbacks if callbacks is not None else AsyncAssistantClientCallbacks()
-                self._conversation_thread_client = AsyncConversationThreadClient.get_instance(self._ai_client_type, config_folder=config_folder)
+                self._conversation_thread_client = AsyncConversationThreadClient.get_instance(AIClientType.OPEN_AI, config_folder=config_folder) if self._ai_client_type == AIClientType.AZURE_INFERENCE else AsyncConversationThreadClient.get_instance(self._ai_client_type, config_folder=config_folder)
             else:
                 self._callbacks = callbacks if callbacks is not None else AssistantClientCallbacks()
-                self._conversation_thread_client = ConversationThreadClient.get_instance(self._ai_client_type, config_folder=config_folder)
+                self._conversation_thread_client = ConversationThreadClient.get_instance(AIClientType.OPEN_AI, config_folder=config_folder) if self._ai_client_type == AIClientType.AZURE_INFERENCE else ConversationThreadClient.get_instance(self._ai_client_type, config_folder=config_folder)
             self._functions = {}
             self._assistant_config = AssistantConfig.from_dict(self._config_data)
             self._cancel_run_requested = threading.Event()
@@ -93,6 +90,9 @@ class BaseAssistantClient:
             raise ValueError("The 'ai_client_type' field is required in config_data")
         if "model" not in config_data:
             raise ValueError("The 'model' field is required in config_data")
+        
+        if config_data.get('ai_client_type') == 'AZURE_INFERENCE' and (('ai_client_config' not in config_data or config_data.get('ai_client_config') is None) or ('endpoint' not in config_data['ai_client_config'] or config_data['ai_client_config'].get('endpoint') is None) or('key' not in config_data['ai_client_config'] or config_data['ai_client_config'].get('key') is None)):
+            raise ValueError("Azure Inference client requires 'endpoint' and 'key' in config_data")
 
     def _get_ai_client_type(self, ai_client_type_str: str, async_mode: bool = False):
         try:

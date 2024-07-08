@@ -712,7 +712,12 @@ class AssistantConfig:
     
     def _setup_ai_client(self, config_data):
         if self._ai_client_type == 'AZURE_INFERENCE':
-            return AIClientConfig(endpoint=config_data['endpoint'], key=config_data['key'])
+            if config_data.get('ai_client_config', None) is not None:
+                ai_client_data = config_data.get('ai_client_config', {
+                    'endpoint': None,
+                    'key': None
+                })
+                return AIClientConfig(endpoint=ai_client_data['endpoint'], key=ai_client_data['key'])
 
     def _setup_completion_settings(self, config_data):
         if config_data.get('completion_settings', None) is not None:
