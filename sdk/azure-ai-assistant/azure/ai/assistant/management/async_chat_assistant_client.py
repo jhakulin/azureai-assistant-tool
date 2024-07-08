@@ -8,8 +8,9 @@ from azure.ai.assistant.management.text_message import TextMessage
 from azure.ai.assistant.management.base_chat_assistant_client import BaseChatAssistantClient
 from azure.ai.assistant.management.exceptions import EngineError, InvalidJSONError
 from azure.ai.assistant.management.logger_module import logger
-
-from openai import AsyncAzureOpenAI, AsyncOpenAI
+from azure.ai.assistant.management.async_ai_client_azure_inference import AsyncAzureInferenceClient
+from azure.ai.assistant.management.async_ai_client_azure_openai import AsyncAzureOpenAIClient
+from azure.ai.assistant.management.async_ai_client_openai import AsyncOpenAIClient
 
 from typing import Optional, Union
 from datetime import datetime
@@ -37,7 +38,7 @@ class AsyncChatAssistantClient(BaseChatAssistantClient):
             **client_args
     ) -> None:
         super().__init__(config_json, callbacks, async_mode=True, **client_args)
-        self._async_client : Union[AsyncOpenAI, AsyncAzureOpenAI] = self._ai_client
+        self._async_client : Union[AsyncOpenAIClient, AsyncAzureOpenAIClient, AsyncAzureInferenceClient] = self._ai_client
         # Init with base settings, leaving async init for the factory method
 
     async def _async_init(
@@ -236,21 +237,36 @@ class AsyncChatAssistantClient(BaseChatAssistantClient):
                 top_p = None if text_completion_config is None else text_completion_config.top_p
                 response_format = None if text_completion_config is None else {'type': text_completion_config.response_format}
 
-                response = await self._async_client.chat.completions.create(
-                    model=self._assistant_config.model,
-                    messages=self._messages,
-                    tools=self._tools,
-                    tool_choice=None if self._tools is None else "auto",
-                    stream=stream,
-                    temperature=temperature,
-                    seed=seed,
-                    frequency_penalty=frequency_penalty,
-                    max_tokens=max_tokens,
-                    presence_penalty=presence_penalty,
-                    response_format=response_format,
-                    top_p=top_p,
-                    timeout=timeout
-                )
+                if isinstance(self._async_client, AsyncAzureInferenceClient):
+                    response = await self._async_client.create_completions(
+                        messages=self._messages,
+                        tools=self._tools,
+                        tool_choice=None if self._tools is None else "auto",
+                        stream=stream,
+                        temperature=temperature,
+                        seed=seed,
+                        frequency_penalty=frequency_penalty,
+                        max_tokens=max_tokens,
+                        presence_penalty=presence_penalty,
+                        response_format=response_format,
+                        top_p=top_p,
+                    )
+                else:
+                    response = await self._async_client.create_completions(
+                        model=self._assistant_config.model,
+                        messages=self._messages,
+                        tools=self._tools,
+                        tool_choice=None if self._tools is None else "auto",
+                        stream=stream,
+                        temperature=temperature,
+                        seed=seed,
+                        frequency_penalty=frequency_penalty,
+                        max_tokens=max_tokens,
+                        presence_penalty=presence_penalty,
+                        response_format=response_format,
+                        top_p=top_p,
+                        timeout=timeout
+                    )
 
                 if response and stream:
                     continue_processing = await self._handle_streaming_response(response, thread_name, run_id)
