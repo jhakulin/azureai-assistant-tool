@@ -64,16 +64,10 @@ class AssistantsMenu:
         # Show the dialog non-modally
         self.dialog.show()
 
-    def on_assistant_config_submitted(self, assistant_config_json, ai_client_type, assistant_type, endpoint, key):
+    def on_assistant_config_submitted(self, assistant_config_json, ai_client_type, assistant_type):
         try:
             if assistant_type == "chat_assistant":
-                client_args = {}
-                if ai_client_type == "AZURE_INFERENCE":
-                    client_args = {
-                        "endpoint": endpoint, 
-                        "credential": AzureKeyCredential(key), 
-                        "headers": {"api-key": key}}
-                assistant_client = ChatAssistantClient.from_json(assistant_config_json, self.main_window, self.main_window.connection_timeout, **client_args)
+                assistant_client = ChatAssistantClient.from_json(assistant_config_json, self.main_window, self.main_window.connection_timeout)
             else:
                 assistant_client = AssistantClient.from_json(assistant_config_json, self.main_window, self.main_window.connection_timeout)
             self.assistant_client_manager.register_client(assistant_client.name, assistant_client)

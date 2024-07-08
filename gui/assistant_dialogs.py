@@ -12,7 +12,7 @@ from PySide6.QtGui import QIcon, QTextOption
 import json, os, shutil, threading
 
 from azure.ai.assistant.management.assistant_config_manager import AssistantConfigManager
-from azure.ai.assistant.management.assistant_config import ToolResourcesConfig, VectorStoreConfig
+from azure.ai.assistant.management.assistant_config import ToolResourcesConfig, VectorStoreConfig, AIClientConfig
 from azure.ai.assistant.management.function_config_manager import FunctionConfigManager
 from azure.ai.assistant.management.ai_client_factory import AIClientType, AIClientFactory
 from azure.ai.assistant.management.logger_module import logger
@@ -35,7 +35,7 @@ class CustomSpinBox(QSpinBox):
 
 
 class AssistantConfigDialog(QDialog):
-    assistantConfigSubmitted = Signal(str, str, str, str, str)
+    assistantConfigSubmitted = Signal(str, str, str)
 
     def __init__(
             self, 
@@ -252,8 +252,11 @@ class AssistantConfigDialog(QDialog):
         # Key field for Azure Inference
         self.keyLabel = QLabel('Key:')
         self.keyEdit = QLineEdit()
-        self.keyLabel.setVisible(False)
-        self.keyEdit.setVisible(False)
+        is_azure_inference = active_ai_client_type == AIClientType.AZURE_INFERENCE
+        self.keyLabel.setVisible(is_azure_inference)
+        self.keyEdit.setVisible(is_azure_inference)
+        if not is_azure_inference:
+            self.keyEdit.clear()
         self.keyEdit.setEchoMode(QLineEdit.EchoMode.PasswordEchoOnEdit)
 
         configLayout.addWidget(self.keyLabel)
@@ -760,6 +763,10 @@ class AssistantConfigDialog(QDialog):
             else:
                 self.modelComboBox.addItem(self.assistant_config.model)
                 self.modelComboBox.setCurrentIndex(self.modelComboBox.count() - 1)
+            
+            # Set the key field for Azure Inference
+            if AIClientType[self.assistant_config.ai_client_type] == AIClientType.AZURE_INFERENCE:
+                self.keyEdit.setText(self.assistant_config.ai_client_config.key)
 
             # Pre-select functions
             self.pre_select_functions()
@@ -931,6 +938,12 @@ class AssistantConfigDialog(QDialog):
                     'top_p': self.topPSlider.value() / 100,
                     'max_text_messages': self.maxMessagesEdit.value()
                 }
+            if self.ai_client_type == AIClientType.AZURE_INFERENCE:
+                ai_client_config = AIClientConfig(
+                    endpoint=self.modelComboBox.currentText(),
+                    key=self.keyEdit.text()
+                )
+
         elif self.assistant_type == "assistant":
             if not self.useDefaultSettingsCheckBox.isChecked():
                 truncation_strategy = {
@@ -986,14 +999,12 @@ class AssistantConfigDialog(QDialog):
             'output_folder_path': self.outputFolderPathEdit.text(),
             'ai_client_type': self.aiClientComboBox.currentText(),
             'assistant_type': self.assistant_type,
-            'completion_settings': completion_settings
+            'completion_settings': completion_settings,
+            'ai_client_config': ai_client_config.to_dict() if self.ai_client_type == AIClientType.AZURE_INFERENCE else None
         }
 
-        endpoint = self.modelComboBox.currentText() if self.ai_client_type == AIClientType.AZURE_INFERENCE else None
-        key = self.keyEdit.text() if self.ai_client_type == AIClientType.AZURE_INFERENCE else None
-
         # Validation and emission of the configuration
-        if self.ai_client_type == AIClientType.AZURE_INFERENCE and (not key or not endpoint or not config['name'] or not config['instructions']):
+        if self.ai_client_type == AIClientType.AZURE_INFERENCE and (not config['ai_client_config']['endpoint'] or not config['ai_client_config']['key'] or not config['name'] or not config['instructions']):
             QMessageBox.information(self, "Missing Fields", "Name, Instructions, Endpoint, and Key are required fields.")
             return
         elif not config['name'] or not config['instructions'] or not config['model']:
@@ -1001,7 +1012,7 @@ class AssistantConfigDialog(QDialog):
             return
 
         assistant_config_json = json.dumps(config, indent=4)
-        self.assistantConfigSubmitted.emit(assistant_config_json, self.aiClientComboBox.currentText(), self.assistant_type, endpoint, key)
+        self.assistantConfigSubmitted.emit(assistant_config_json, self.aiClientComboBox.currentText(), self.assistant_type)
 
 
 class ExportAssistantDialog(QDialog):

@@ -100,7 +100,10 @@ class MainWindow(QMainWindow, AssistantClientCallbacks, TaskManagerCallbacks):
         self.conversation_thread_clients : dict[AIClientType, ConversationThreadClient] = {}
         for ai_client_type in AIClientType:
             try:
-                self.conversation_thread_clients[ai_client_type] = ConversationThreadClient.get_instance(ai_client_type, config_folder='config')
+                if ai_client_type == AIClientType.AZURE_INFERENCE:
+                    self.conversation_thread_clients[ai_client_type] = ConversationThreadClient.get_instance(AIClientType.OPEN_AI, config_folder='config')
+                else:
+                    self.conversation_thread_clients[ai_client_type] = ConversationThreadClient.get_instance(ai_client_type, config_folder='config')
             except Exception as e:
                 self.conversation_thread_clients[ai_client_type] = None
                 logger.error(f"Error initializing conversation thread client for ai_client_type {ai_client_type.name}: {e}")
@@ -267,7 +270,7 @@ class MainWindow(QMainWindow, AssistantClientCallbacks, TaskManagerCallbacks):
             logger.error(f"Error getting client for active_ai_client_type {self.active_ai_client_type.name}: {e}")
 
         finally:
-            if client is None:
+            if client is None and self.active_ai_client_type is not AIClientType.AZURE_INFERENCE:
                 message = f"{self.active_ai_client_type.name} assistant client not initialized properly, check the API keys"
                 self.status_messages['ai_client_type'] = f'<span style="color: red;">{message}</span>'
                 self.update_client_label()
