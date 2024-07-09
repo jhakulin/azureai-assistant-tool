@@ -85,6 +85,19 @@ class AIClientConfig:
                 return ai_client
         return None
     
+    def get_ai_client_name_by_endpoint(self, endpoint: str) -> str:
+        """
+        Get the name of an ai client by its endpoint.
+        
+        :param endpoint: The endpoint of the ai client.
+        :type endpoint: str
+
+        :return: The name of the ai client.
+        :rtype: str
+        """
+        ai_client = self.get_ai_client_by_endpoint(endpoint)
+        return ai_client['name'] if ai_client else None
+    
     def get_ai_client_key_by_endpoint(self, endpoint: str) -> str:
         """
         Get the key of an ai client by its endpoint.

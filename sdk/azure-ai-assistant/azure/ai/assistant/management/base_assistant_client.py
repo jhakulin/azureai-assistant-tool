@@ -18,6 +18,7 @@ from azure.ai.assistant.management.ai_client_openai import OpenAIClient
 from azure.ai.assistant.management.async_ai_client_azure_inference import AsyncAzureInferenceClient
 from azure.ai.assistant.management.async_ai_client_azure_openai import AsyncAzureOpenAIClient
 from azure.ai.assistant.management.async_ai_client_openai import AsyncOpenAIClient
+from azure.ai.assistant.management.ai_client_config import AIClientConfig
 
 from typing import Union
 
@@ -63,7 +64,14 @@ class BaseAssistantClient:
             self._validate_config_data(self._config_data)
             self._name = self._config_data["name"]
             self._ai_client_type = self._get_ai_client_type(self._config_data["ai_client_type"], async_mode)
-            self._ai_client : Union[OpenAIClient, AsyncOpenAIClient, AzureOpenAIClient, AsyncAzureOpenAIClient, AzureInferenceClient, AsyncAzureInferenceClient] = self._get_ai_client(self._ai_client_type, **self._config_data.get('ai_client_config'), **client_args) if self._ai_client_type == AIClientType.AZURE_INFERENCE else self._get_ai_client(self._ai_client_type, **client_args)
+            ai_client_configs = AIClientConfig(self._ai_client_type, self._config_data.get('config_folder'))
+            ai_client_configs.get_all_ai_clients()
+            if "ai_client_name" in self._config_data and self._config_data["ai_client_name"] is not None:
+                self._ai_client_config = ai_client_configs.get_ai_client_by_name(self._config_data["ai_client_name"])
+                for key, value in self._ai_client_config.items():
+                    if key != 'name':
+                        client_args[key] = value
+            self._ai_client : Union[OpenAIClient, AsyncOpenAIClient, AzureOpenAIClient, AsyncAzureOpenAIClient, AzureInferenceClient, AsyncAzureInferenceClient] = self._get_ai_client(self._ai_client_type, **client_args)
             config_folder = None
             if "config_folder" in self._config_data:
                 config_folder = self._config_data["config_folder"]
@@ -90,9 +98,6 @@ class BaseAssistantClient:
             raise ValueError("The 'ai_client_type' field is required in config_data")
         if "model" not in config_data:
             raise ValueError("The 'model' field is required in config_data")
-        
-        if config_data.get('ai_client_type') == 'AZURE_INFERENCE' and (('ai_client_config' not in config_data or config_data.get('ai_client_config') is None) or ('endpoint' not in config_data['ai_client_config'] or config_data['ai_client_config'].get('endpoint') is None) or('key' not in config_data['ai_client_config'] or config_data['ai_client_config'].get('key') is None)):
-            raise ValueError("Azure Inference client requires 'endpoint' and 'key' in config_data")
 
     def _get_ai_client_type(self, ai_client_type_str: str, async_mode: bool = False):
         try:

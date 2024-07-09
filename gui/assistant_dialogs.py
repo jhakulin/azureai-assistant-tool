@@ -12,10 +12,11 @@ from PySide6.QtGui import QIcon, QTextOption
 import json, os, shutil, threading
 
 from azure.ai.assistant.management.assistant_config_manager import AssistantConfigManager
-from azure.ai.assistant.management.assistant_config import ToolResourcesConfig, VectorStoreConfig, AIClientConfig
+from azure.ai.assistant.management.assistant_config import ToolResourcesConfig, VectorStoreConfig
 from azure.ai.assistant.management.function_config_manager import FunctionConfigManager
 from azure.ai.assistant.management.ai_client_factory import AIClientType, AIClientFactory
 from azure.ai.assistant.management.logger_module import logger
+from azure.ai.assistant.management.ai_client_config import AIClientConfig
 from gui.signals import UserInputSendSignal, UserInputSignal
 from gui.speech_input_handler import SpeechInputHandler
 from gui.signals import ErrorSignal, StartStatusAnimationSignal, StopStatusAnimationSignal
@@ -753,6 +754,7 @@ class AssistantConfigDialog(QDialog):
 
     def pre_load_assistant_config(self, name):
         self.assistant_config = AssistantConfigManager.get_instance().get_config(name)
+        ai_client_configs = AIClientConfig(self.assistant_config.ai_client_type, 'config')
         if self.assistant_config:
             self.nameEdit.setText(self.assistant_config.name)
             self.assistant_id = self.assistant_config.assistant_id
@@ -766,7 +768,7 @@ class AssistantConfigDialog(QDialog):
             
             # Set the key field for Azure Inference
             if AIClientType[self.assistant_config.ai_client_type] == AIClientType.AZURE_INFERENCE:
-                self.keyEdit.setText(self.assistant_config.ai_client_config.key)
+                self.keyEdit.setText(ai_client_configs.get_ai_client_key_by_name(self.assistant_config.ai_client_name))
 
             # Pre-select functions
             self.pre_select_functions()
@@ -938,12 +940,6 @@ class AssistantConfigDialog(QDialog):
                     'top_p': self.topPSlider.value() / 100,
                     'max_text_messages': self.maxMessagesEdit.value()
                 }
-            if self.ai_client_type == AIClientType.AZURE_INFERENCE:
-                ai_client_config = AIClientConfig(
-                    endpoint=self.modelComboBox.currentText(),
-                    key=self.keyEdit.text()
-                )
-
         elif self.assistant_type == "assistant":
             if not self.useDefaultSettingsCheckBox.isChecked():
                 truncation_strategy = {
@@ -985,6 +981,13 @@ class AssistantConfigDialog(QDialog):
                 code_interpreter_files=code_interpreter_files,
                 file_search_vector_stores=vector_stores
             )
+        
+        #setup ai client config
+        ai_client_configs = AIClientConfig(AIClientType[self.aiClientComboBox.currentText()], 'config')
+        ai_client_configs.get_all_ai_clients()
+        if not(AIClientType[self.aiClientComboBox.currentText()] is AIClientType.OPEN_AI or AIClientType[self.aiClientComboBox.currentText()] is AIClientType.AZURE_OPEN_AI):
+            ai_client_configs.add_ai_client('New Client', self.modelComboBox.currentText(), self.keyEdit.text())
+        ai_client_configs.save_to_json()
 
         config = {
             'name': self.assistant_name,
@@ -1000,11 +1003,12 @@ class AssistantConfigDialog(QDialog):
             'ai_client_type': self.aiClientComboBox.currentText(),
             'assistant_type': self.assistant_type,
             'completion_settings': completion_settings,
-            'ai_client_config': ai_client_config.to_dict() if self.ai_client_type == AIClientType.AZURE_INFERENCE else None
+            'config_folder': 'config',
+            'ai_client_name': ai_client_configs.get_ai_client_name_by_endpoint(self.modelComboBox.currentText())
         }
 
         # Validation and emission of the configuration
-        if self.ai_client_type == AIClientType.AZURE_INFERENCE and (not config['ai_client_config']['endpoint'] or not config['ai_client_config']['key'] or not config['name'] or not config['instructions']):
+        if self.ai_client_type == AIClientType.AZURE_INFERENCE and (not config['ai_client_name'] or not ai_client_configs.get_ai_client_endpoint_by_name(config['ai_client_name']) or not ai_client_configs.get_ai_client_key_by_name(config['ai_client_name']) or not config['name'] or not config['instructions']):
             QMessageBox.information(self, "Missing Fields", "Name, Instructions, Endpoint, and Key are required fields.")
             return
         elif not config['name'] or not config['instructions'] or not config['model']:
