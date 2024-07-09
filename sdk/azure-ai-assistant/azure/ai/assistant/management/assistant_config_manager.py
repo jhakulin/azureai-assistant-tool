@@ -311,9 +311,9 @@ class AssistantConfigManager:
         if 'tool_resources' in config_data and config_data.get('tool_resources') is not None and not isinstance(config_data['tool_resources'], dict):
             raise ConfigError("Assistant 'tool_resources' must be a dictionary in the configuration")
         
-        #Check if ai client is of type azure inference, then check for endpoint and key
-        if config_data.get('ai_client_type') == 'AZURE_INFERENCE' and (('ai_client_config' not in config_data or config_data.get('ai_client_config') is None) or ('endpoint' not in config_data['ai_client_config'] or config_data['ai_client_config'].get('endpoint') is None) or('key' not in config_data['ai_client_config'] or config_data['ai_client_config'].get('key') is None)):
-            raise ConfigError("Azure Inference client requires 'endpoint' and 'key' in the configuration")
+        #Check if ai client is of type azure inference, then check for ai client config name
+        if config_data.get('ai_client_type') == 'AZURE_INFERENCE' and ('ai_client_name' not in config_data or not config_data['ai_client_name']):
+            raise ConfigError("Azure Inference client requires 'ai_client_name' in the configuration")
 
     def save_config(
             self, 
