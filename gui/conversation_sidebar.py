@@ -449,10 +449,7 @@ class ConversationSidebar(QWidget):
             self.threadList.clear_files()
 
             # Get the threads for the selected AI client type
-            if self._ai_client_type == AIClientType.AZURE_INFERENCE:
-                threads_client = ConversationThreadClient.get_instance(AIClientType.OPEN_AI)
-            else:
-                threads_client = ConversationThreadClient.get_instance(self._ai_client_type, config_folder='config')
+            threads_client = ConversationThreadClient.get_instance(self._ai_client_type, config_folder='config')
             threads = threads_client.get_conversation_threads()
             self.threadList.load_threads_with_attachments(threads)
         except Exception as e:
@@ -473,10 +470,7 @@ class ConversationSidebar(QWidget):
             QMessageBox.warning(self, "Error", "Please select an assistant first.")
             return
         try:
-            if self._ai_client_type == AIClientType.AZURE_INFERENCE:
-                threads_client = ConversationThreadClient.get_instance(AIClientType.OPEN_AI)
-            else:
-                threads_client = ConversationThreadClient.get_instance(self._ai_client_type)
+            threads_client = ConversationThreadClient.get_instance(self._ai_client_type)
             thread_name = self.create_conversation_thread(threads_client, timeout=self.main_window.connection_timeout)
             self._select_thread(thread_name)
         except Exception as e:
@@ -535,10 +529,7 @@ class ConversationSidebar(QWidget):
         # Select the thread item in the sidebar
         self._select_threadlist_item(unique_thread_name)
         try:
-            if self._ai_client_type == AIClientType.AZURE_INFERENCE:
-                threads_client = ConversationThreadClient.get_instance(AIClientType.OPEN_AI)
-            else:
-                threads_client = ConversationThreadClient.get_instance(self._ai_client_type)
+            threads_client = ConversationThreadClient.get_instance(self._ai_client_type)
             #TODO separate threads per ai_client_type in the json file
             threads_client.set_current_conversation_thread(unique_thread_name)
             self.main_window.conversation_view.conversationView.clear()
@@ -556,10 +547,7 @@ class ConversationSidebar(QWidget):
             current_row = self.threadList.currentRow()
 
             # Remove the selected thread from the assistant manager
-            if self._ai_client_type == AIClientType.AZURE_INFERENCE:
-                threads_client = ConversationThreadClient.get_instance(AIClientType.OPEN_AI)
-            else:
-                threads_client = ConversationThreadClient.get_instance(self._ai_client_type)
+            threads_client = ConversationThreadClient.get_instance(self._ai_client_type)
             threads_client.delete_conversation_thread(thread_name)
             threads_client.save_conversation_threads()
             

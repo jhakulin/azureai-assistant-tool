@@ -754,7 +754,7 @@ class AssistantConfigDialog(QDialog):
 
     def pre_load_assistant_config(self, name):
         self.assistant_config = AssistantConfigManager.get_instance().get_config(name)
-        ai_client_configs = AIClientConfig(self.assistant_config.ai_client_type, 'config')
+        ai_client_configs = AIClientConfig(AIClientType[self.assistant_config.ai_client_type], 'config')
         if self.assistant_config:
             self.nameEdit.setText(self.assistant_config.name)
             self.assistant_id = self.assistant_config.assistant_id
