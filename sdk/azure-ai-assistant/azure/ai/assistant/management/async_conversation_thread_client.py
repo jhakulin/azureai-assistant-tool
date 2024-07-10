@@ -40,7 +40,7 @@ class AsyncConversationThreadClient:
     ):
         self._ai_client_type = ai_client_type
         self._config_folder = config_folder
-        self._ai_client : Union[AsyncOpenAIClient, AsyncAzureOpenAIClient] = AIClientFactory.get_instance().get_client(self._ai_client_type, **client_args)
+        self._ai_client : Union[AsyncOpenAIClient, AsyncAzureOpenAIClient] = AIClientFactory.get_instance().get_client(AsyncAIClientType.OPEN_AI, **client_args) if not(self._ai_client_type is AsyncAIClientType.AZURE_OPEN_AI or self._ai_client_type is AsyncAIClientType.OPEN_AI) else AIClientFactory.get_instance().get_client(self._ai_client_type, **client_args)
         self._thread_config = ConversationThreadConfig(self._ai_client_type, self._config_folder)
         self._assistant_config_manager = AssistantConfigManager.get_instance()
 
