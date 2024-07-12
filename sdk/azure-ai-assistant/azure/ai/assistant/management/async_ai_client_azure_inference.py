@@ -32,6 +32,8 @@ class AsyncAzureInferenceClient(BaseAiClient):
         :param kwargs: Keyword arguments for the completion request.
         :return: Completion results from the Azure inference service.
         """
+        if "timeout" in kwargs and kwargs["timeout"] is None:
+            kwargs.pop("timeout")
         return await self._ai_client.complete(**kwargs)
     
     @property
