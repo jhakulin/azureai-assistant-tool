@@ -177,8 +177,8 @@ def test_assistant_client_tool_resources_file_search_create_with_file_json():
     assert vs_id is not None
     file_id = client.assistant_config.tool_resources.file_search_vector_stores[0].files[file1]
     assert file_id is not None
-    client.ai_client.ai_client.beta.vector_stores.delete(vector_store_id=vs_id)
-    client.ai_client.ai_client.files.delete(file_id)
+    client.ai_client.beta.vector_stores.delete(vector_store_id=vs_id)
+    client.ai_client.files.delete(file_id)
     client.purge()
 
 def test_assistant_client_tool_resources_file_search_create_with_file_config():
@@ -199,8 +199,8 @@ def test_assistant_client_tool_resources_file_search_create_with_file_config():
     assert vs_id is not None
     file_id = client.assistant_config.tool_resources.file_search_vector_stores[0].files[file_1]
     assert file_id is not None
-    client.ai_client.ai_client.beta.vector_stores.delete(vector_store_id=vs_id)
-    client.ai_client.ai_client.files.delete(file_id)
+    client.ai_client.beta.vector_stores.delete(vector_store_id=vs_id)
+    client.ai_client.files.delete(file_id)
     client.purge()
 
 def test_assistant_client_enable_code_interpreter():
