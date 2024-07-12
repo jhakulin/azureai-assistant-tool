@@ -13,7 +13,7 @@ class OpenAIClient(BaseAiClient):
         :param client_args: Additional keyword arguments for configuring the client.
         :type client_args: Dict
         """
-        self._ai_client = OpenAI(**client_args)
+        super().__init__(OpenAI(**client_args))
 
     def create_completions(self, **kwargs):
         """

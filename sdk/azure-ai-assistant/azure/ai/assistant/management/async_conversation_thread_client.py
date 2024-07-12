@@ -157,7 +157,7 @@ class AsyncConversationThreadClient:
     ) -> List[Message]:
         try:
             thread_id = self._thread_config.get_thread_id_by_name(thread_name)
-            messages = await self._ai_client.ai_client.beta.threads.messages.list(
+            messages = await self._ai_client.beta.threads.messages.list(
                 thread_id=thread_id,
                 timeout=timeout
             )
@@ -188,7 +188,7 @@ class AsyncConversationThreadClient:
         try:
             messages = await self._get_conversation_thread_messages(thread_name, timeout)
             logger.info(f"Retrieved messages content: {messages}")
-            conversation = await AsyncConversation.create(self._ai_client.ai_client, messages, max_text_messages)
+            conversation = await AsyncConversation.create(self._ai_client, messages, max_text_messages)
             return conversation
         except Exception as e:
             error_message = f"Error retrieving messages content: Exception: {e}"
@@ -205,7 +205,7 @@ class AsyncConversationThreadClient:
         :return: The conversation message.
         :rtype: ConversationMessage
         """
-        return await AsyncConversationMessage().create(self._ai_client.ai_client, original_message)
+        return await AsyncConversationMessage().create(self._ai_client, original_message)
     
     async def create_conversation_thread_message(
             self, 
@@ -268,7 +268,7 @@ class AsyncConversationThreadClient:
 
             if attachments:
                 # Create the message with the attachments
-                await self._ai_client.ai_client.beta.threads.messages.create(
+                await self._ai_client.beta.threads.messages.create(
                     thread_id,
                     role=role,
                     metadata=metadata,
@@ -278,7 +278,7 @@ class AsyncConversationThreadClient:
                 )
             else:
                 # Create the message without attachments
-                await self._ai_client.ai_client.beta.threads.messages.create(
+                await self._ai_client.beta.threads.messages.create(
                     thread_id,
                     role=role,
                     metadata=metadata,
@@ -314,12 +314,12 @@ class AsyncConversationThreadClient:
 
                 if file_id is None:
                     if attachment_type == AttachmentType.IMAGE_FILE and tool is None:  # This is a plain image file
-                        file_object = await self._ai_client.ai_client.files.create(file=open(file_path, "rb"), purpose='vision')
+                        file_object = await self._ai_client.files.create(file=open(file_path, "rb"), purpose='vision')
                         attachment.file_id = file_object.id
                         image_attachments.append(attachment)
                         self._thread_config.add_attachments_to_thread(thread_id, [attachment])  # Add image attachment to thread config
                     else:  # This is a tool file
-                        file_object = await self._ai_client.ai_client.files.create(file=open(file_path, "rb"), purpose='assistants')
+                        file_object = await self._ai_client.files.create(file=open(file_path, "rb"), purpose='assistants')
                         attachment.file_id = file_object.id
                         self._thread_config.add_attachments_to_thread(thread_id, [attachment])
                         all_updated_attachments.append(attachment)
@@ -356,7 +356,7 @@ class AsyncConversationThreadClient:
             thread_id = self._thread_config.get_thread_id_by_name(thread_name)
             logger.info(f"Deleting thread with ID: {thread_id}, thread name: {thread_name}")
             self._thread_config.remove_thread_by_id(thread_id)
-            await self._ai_client.ai_client.beta.threads.delete(
+            await self._ai_client.beta.threads.delete(
                 thread_id=thread_id,
                 timeout=timeout
             )
@@ -405,6 +405,6 @@ class AsyncConversationThreadClient:
         """
         Closes the conversation thread client.
         """
-        await self._ai_client.ai_client.close()
+        await self._ai_client.close()
         # delete the instance for the AI client type, so that a new instance can be recreated
         del self._instances[self._ai_client_type]

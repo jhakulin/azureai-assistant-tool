@@ -159,7 +159,7 @@ class ConversationThreadClient:
     ) -> List[Message]:
         try:
             thread_id = self._thread_config.get_thread_id_by_name(thread_name)
-            messages = self._ai_client.ai_client.beta.threads.messages.list(
+            messages = self._ai_client.beta.threads.messages.list(
                 thread_id=thread_id,
                 timeout=timeout
             )
@@ -190,7 +190,7 @@ class ConversationThreadClient:
         try:
             messages = self._get_conversation_thread_messages(thread_name, timeout)
             logger.info(f"Retrieved messages content: {messages}")
-            conversation = Conversation(self._ai_client.ai_client, messages, max_text_messages)
+            conversation = Conversation(self._ai_client, messages, max_text_messages)
             return conversation
         except Exception as e:
             error_message = f"Error retrieving messages content: Exception: {e}"
@@ -207,7 +207,7 @@ class ConversationThreadClient:
         :return: The conversation message.
         :rtype: ConversationMessage
         """
-        return ConversationMessage(self._ai_client.ai_client, original_message)
+        return ConversationMessage(self._ai_client, original_message)
 
     def create_conversation_thread_message(
             self,
@@ -267,7 +267,7 @@ class ConversationThreadClient:
 
             if attachments:
                 # Create the message with the attachments
-                self._ai_client.ai_client.beta.threads.messages.create(
+                self._ai_client.beta.threads.messages.create(
                     thread_id,
                     role=role,
                     metadata=metadata,
@@ -277,7 +277,7 @@ class ConversationThreadClient:
                 )
             else:
                 # Create the message without attachments
-                self._ai_client.ai_client.beta.threads.messages.create(
+                self._ai_client.beta.threads.messages.create(
                     thread_id,
                     role=role,
                     metadata=metadata,
@@ -313,12 +313,12 @@ class ConversationThreadClient:
 
                 if file_id is None:
                     if attachment_type == AttachmentType.IMAGE_FILE and tool is None:  # This is a plain image file
-                        file_object = self._ai_client.ai_client.files.create(file=open(file_path, "rb"), purpose='vision')
+                        file_object = self._ai_client.files.create(file=open(file_path, "rb"), purpose='vision')
                         attachment.file_id = file_object.id
                         image_attachments.append(attachment)
                         self._thread_config.add_attachments_to_thread(thread_id, [attachment])  # Add image attachment to thread config
                     else:  # This is a tool file
-                        file_object = self._ai_client.ai_client.files.create(file=open(file_path, "rb"), purpose='assistants')
+                        file_object = self._ai_client.files.create(file=open(file_path, "rb"), purpose='assistants')
                         attachment.file_id = file_object.id
                         self._thread_config.add_attachments_to_thread(thread_id, [attachment])
                         all_updated_attachments.append(attachment)
@@ -355,7 +355,7 @@ class ConversationThreadClient:
             thread_id = self._thread_config.get_thread_id_by_name(thread_name)
             logger.info(f"Deleting thread with ID: {thread_id}, thread name: {thread_name}")
             self._thread_config.remove_thread_by_id(thread_id)
-            self._ai_client.ai_client.beta.threads.delete(
+            self._ai_client.beta.threads.delete(
                 thread_id=thread_id,
                 timeout=timeout
             )

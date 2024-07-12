@@ -13,7 +13,7 @@ class AsyncOpenAIClient(BaseAiClient):
         :param client_args: Additional keyword arguments for configuring the client.
         :type client_args: Dict
         """
-        self._ai_client = AsyncOpenAI(**client_args)
+        super().__init__(AsyncOpenAI(**client_args))
 
     async def create_completions(self, **kwargs):
         """

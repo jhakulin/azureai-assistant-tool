@@ -6,7 +6,14 @@ from abc import ABC, abstractmethod
 class BaseAiClient(ABC):
     """
     A Base class for AI clients.
+
+    :param ai_client: The underlying AI client.
     """
+    def __init__(self, ai_client):
+        self._ai_client = ai_client
+    
+    def __getattr__(self, attr):
+        return getattr(self._ai_client, attr)
     
     @abstractmethod
     def create_completions(self, **kwargs):

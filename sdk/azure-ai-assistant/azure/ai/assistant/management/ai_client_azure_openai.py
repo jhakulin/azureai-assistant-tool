@@ -15,7 +15,7 @@ class AzureOpenAIClient(BaseAiClient):
         :type client_args: Dict
         """
         api_version = os.getenv("AZURE_OPENAI_VERSION", "2024-05-01-preview")
-        self._ai_client = AzureOpenAI(api_version=api_version, azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"), **client_args)
+        super().__init__(AzureOpenAI(api_version=api_version, azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"), **client_args))
     
     def create_completions(self, **kwargs):
         """
