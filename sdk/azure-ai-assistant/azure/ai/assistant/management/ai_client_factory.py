@@ -85,9 +85,9 @@ class AIClientFactory:
         """
         api_version = os.getenv("AZURE_OPENAI_API_VERSION", api_version) or "2024-05-01-preview"
         client_key = (client_type, api_version)
-        if client_key in self._clients:
+        if client_key in self._clients and not client_type == AIClientType.AZURE_INFERENCE:
             # if client is closed, recreate client
-            if not client_type == AIClientType.AZURE_INFERENCE and self._clients[client_key].is_closed():
+            if self._clients[client_key].is_closed():
                 logger.info(f"Recreating client for {client_key}")
                 del self._clients[client_key]
             else:
