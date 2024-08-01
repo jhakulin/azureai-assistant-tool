@@ -237,36 +237,21 @@ class AsyncChatAssistantClient(BaseChatAssistantClient):
                 top_p = None if text_completion_config is None else text_completion_config.top_p
                 response_format = None if text_completion_config is None else {'type': text_completion_config.response_format}
 
-                if isinstance(self._async_client, AsyncAzureInferenceClient):
-                    response = await self._async_client.create_completions(
-                        messages=self._messages,
-                        tools=self._tools,
-                        tool_choice=None if self._tools is None else "auto",
-                        stream=stream,
-                        temperature=temperature,
-                        seed=seed,
-                        frequency_penalty=frequency_penalty,
-                        max_tokens=max_tokens,
-                        presence_penalty=presence_penalty,
-                        response_format=response_format,
-                        top_p=top_p,
-                    )
-                else:
-                    response = await self._async_client.create_completions(
-                        model=self._assistant_config.model,
-                        messages=self._messages,
-                        tools=self._tools,
-                        tool_choice=None if self._tools is None else "auto",
-                        stream=stream,
-                        temperature=temperature,
-                        seed=seed,
-                        frequency_penalty=frequency_penalty,
-                        max_tokens=max_tokens,
-                        presence_penalty=presence_penalty,
-                        response_format=response_format,
-                        top_p=top_p,
-                        timeout=timeout
-                    )
+                response = self._ai_client.create_completions(
+                    model=self._assistant_config.model,
+                    messages=self._messages,
+                    tools=self._tools,
+                    tool_choice=None if self._tools is None else "auto",
+                    stream=stream,
+                    temperature=temperature,
+                    seed=seed,
+                    frequency_penalty=frequency_penalty,
+                    max_tokens=max_tokens,
+                    presence_penalty=presence_penalty,
+                    response_format=response_format,
+                    top_p=top_p,
+                    timeout=timeout
+                )
 
                 if response and stream:
                     continue_processing = await self._handle_streaming_response(response, thread_name, run_id)

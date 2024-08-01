@@ -1,12 +1,12 @@
 # Copyright (c) Microsoft. All rights reserved.
 # Licensed under the MIT license. See LICENSE.md file in the project root for full license information.
 
-from azure.ai.assistant.management.base_ai_client import BaseAiClient
+from azure.ai.assistant.management.base_ai_client import BaseAIClient
 
 from azure.ai.inference.aio import ChatCompletionsClient as AsyncChatCompletionsClient
 from azure.core.credentials import AzureKeyCredential
 
-class AsyncAzureInferenceClient(BaseAiClient):
+class AsyncAzureInferenceClient(BaseAIClient):
     """
     A class that manages Azure Inference Clients
 

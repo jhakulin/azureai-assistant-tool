@@ -3,7 +3,7 @@
 
 from abc import ABC, abstractmethod
 
-class BaseAiClient(ABC):
+class BaseAIClient(ABC):
     """
     A Base class for AI clients.
 

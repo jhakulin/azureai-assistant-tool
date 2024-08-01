@@ -1,11 +1,11 @@
 # Copyright (c) Microsoft. All rights reserved.
 # Licensed under the MIT license. See LICENSE.md file in the project root for full license information.
 
-from azure.ai.assistant.management.base_ai_client import BaseAiClient
+from azure.ai.assistant.management.base_ai_client import BaseAIClient
 
 from openai import AsyncOpenAI
 
-class AsyncOpenAIClient(BaseAiClient):
+class AsyncOpenAIClient(BaseAIClient):
     def __init__(self, **client_args) -> None:
         """
         A class that manages OpenAI Clients
