@@ -34,6 +34,13 @@ class AsyncAzureInferenceClient(BaseAiClient):
         """
         if "timeout" in kwargs and kwargs["timeout"] is None:
             kwargs.pop("timeout")
+
+        for message in kwargs.get("messages"):
+            if isinstance(message.get("content"), list):
+                is_text_only = all(content.get("type") == "text" for content in message.get("content") if message.get("content"))
+                if is_text_only:
+                    message["content"] = "".join((content.get("text") for content in message.get("content")))
+
         return await self._ai_client.complete(**kwargs)
     
     @property
