@@ -985,7 +985,7 @@ class AssistantConfigDialog(QDialog):
         #setup ai client config
         ai_client_configs = AIClientConfig(AIClientType[self.aiClientComboBox.currentText()], 'config')
         ai_client_configs.get_all_ai_clients()
-        if not(AIClientType[self.aiClientComboBox.currentText()] is AIClientType.OPEN_AI or AIClientType[self.aiClientComboBox.currentText()] is AIClientType.AZURE_OPEN_AI):
+        if AIClientType[self.aiClientComboBox.currentText()] is not AIClientType.OPEN_AI and AIClientType[self.aiClientComboBox.currentText()] is not AIClientType.AZURE_OPEN_AI:
             ai_client_configs.add_ai_client('New Client', self.modelComboBox.currentText(), self.keyEdit.text())
         ai_client_configs.save_to_json()
 
