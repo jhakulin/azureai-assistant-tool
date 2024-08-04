@@ -9,8 +9,9 @@ from azure.ai.assistant.management.assistant_config_manager import AssistantConf
 from azure.ai.assistant.management.base_assistant_client import BaseAssistantClient
 from azure.ai.assistant.management.exceptions import EngineError, InvalidJSONError
 from azure.ai.assistant.management.logger_module import logger
-
-from openai import AsyncAzureOpenAI, AsyncOpenAI
+from azure.ai.assistant.management.async_ai_client_azure_inference import AsyncAzureInferenceClient
+from azure.ai.assistant.management.async_ai_client_azure_openai import AsyncAzureOpenAIClient
+from azure.ai.assistant.management.async_ai_client_openai import AsyncOpenAIClient
 
 from typing import Optional, Union
 from datetime import datetime
@@ -41,7 +42,7 @@ class AsyncAssistantClient(BaseAssistantClient):
             **client_args
     ) -> None:
         super().__init__(config_json, callbacks, async_mode=True, **client_args)
-        self._async_client : Union[AsyncOpenAI, AsyncAzureOpenAI] = self._ai_client
+        self._async_client : Union[AsyncOpenAIClient, AsyncAzureOpenAIClient, AsyncAzureInferenceClient] = self._ai_client
         # Init with base settings, leaving async init for the factory method
 
     async def _async_init(

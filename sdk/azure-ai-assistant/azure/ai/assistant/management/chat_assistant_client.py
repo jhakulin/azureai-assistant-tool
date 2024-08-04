@@ -8,6 +8,7 @@ from azure.ai.assistant.management.text_message import TextMessage
 from azure.ai.assistant.management.base_chat_assistant_client import BaseChatAssistantClient
 from azure.ai.assistant.management.exceptions import EngineError, InvalidJSONError
 from azure.ai.assistant.management.logger_module import logger
+from azure.ai.assistant.management.ai_client_azure_inference import AzureInferenceClient
 
 from typing import Optional
 from datetime import datetime
@@ -218,7 +219,7 @@ class ChatAssistantClient(BaseChatAssistantClient):
                 top_p = None if text_completion_config is None else text_completion_config.top_p
                 response_format = None if text_completion_config is None else {'type': text_completion_config.response_format}
 
-                response = self._ai_client.chat.completions.create(
+                response = self._ai_client.create_completions(
                     model=self._assistant_config.model,
                     messages=self._messages,
                     tools=self._tools,

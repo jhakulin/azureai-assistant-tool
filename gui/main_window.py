@@ -267,7 +267,7 @@ class MainWindow(QMainWindow, AssistantClientCallbacks, TaskManagerCallbacks):
             logger.error(f"Error getting client for active_ai_client_type {self.active_ai_client_type.name}: {e}")
 
         finally:
-            if client is None:
+            if client is None and self.active_ai_client_type is not AIClientType.AZURE_INFERENCE:
                 message = f"{self.active_ai_client_type.name} assistant client not initialized properly, check the API keys"
                 self.status_messages['ai_client_type'] = f'<span style="color: red;">{message}</span>'
                 self.update_client_label()

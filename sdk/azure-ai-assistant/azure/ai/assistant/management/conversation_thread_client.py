@@ -10,6 +10,8 @@ from azure.ai.assistant.management.message_utils import _extract_image_urls
 from azure.ai.assistant.management.assistant_config_manager import AssistantConfigManager
 from azure.ai.assistant.management.exceptions import EngineError
 from azure.ai.assistant.management.logger_module import logger
+from azure.ai.assistant.management.ai_client_openai import OpenAIClient
+from azure.ai.assistant.management.ai_client_azure_openai import AzureOpenAIClient
 
 from openai import AzureOpenAI, OpenAI
 
@@ -40,7 +42,7 @@ class ConversationThreadClient:
     ):
         self._ai_client_type = ai_client_type
         self._config_folder = config_folder
-        self._ai_client : Union[OpenAI, AzureOpenAI] = AIClientFactory.get_instance().get_client(self._ai_client_type, **client_args)
+        self._ai_client : Union[OpenAIClient, AzureOpenAIClient] = AIClientFactory.get_instance().get_client(AIClientType.OPEN_AI, **client_args) if self._ai_client_type is not AIClientType.AZURE_OPEN_AI and self._ai_client_type is not AIClientType.OPEN_AI else AIClientFactory.get_instance().get_client(self._ai_client_type, **client_args)
         self._thread_config = ConversationThreadConfig(self._ai_client_type, self._config_folder)
         self._assistant_config_manager = AssistantConfigManager.get_instance()
 
@@ -87,7 +89,7 @@ class ConversationThreadClient:
         """
         try:
             # Create a new conversation thread for the assistant
-            thread = self._ai_client.beta.threads.create(timeout=timeout)
+            thread = self._ai_client.create_thread(timeout=timeout)
             # Add the new thread to the thread config
             self._thread_config.add_thread(thread.id, "New Thread")
             thread_name = self._thread_config.get_thread_name_by_id(thread.id)
