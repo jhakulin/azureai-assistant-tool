@@ -83,12 +83,19 @@ class BaseChatAssistantClient(BaseAssistantClient):
 
     def _append_tool_calls(self, tool_calls, tcchunklist):
         for tcchunk in tcchunklist:
-            while len(tool_calls) <= tcchunk.index:
+            index = getattr(tcchunk, "index", None) or tcchunk.get("index")
+            while len(tool_calls) <= index:
                 tool_calls.append({"id": "", "type": "function", "function": {"name": "", "arguments": ""}})
-            tc = tool_calls[tcchunk.index]
-            tc["id"] += tcchunk.id or ""
-            tc["function"]["name"] += tcchunk.function.name or ""
-            tc["function"]["arguments"] += tcchunk.function.arguments or ""
+            try:
+                tc = tool_calls[index]
+                tc["id"] += tcchunk.id or ""
+                tc["function"]["name"] += tcchunk.function.name or ""
+                tc["function"]["arguments"] += tcchunk.function.arguments or ""
+            except AttributeError:
+                tc = tool_calls[index]
+                tc["id"] += tcchunk.get("id") or ""
+                tc["function"]["name"] += tcchunk.get("function").get("name") or ""
+                tc["function"]["arguments"] += tcchunk.get("function").get("arguments") or ""
         return tool_calls
 
     def _reset_system_messages(self, assistant_config: AssistantConfig):

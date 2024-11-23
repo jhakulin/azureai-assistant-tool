@@ -616,7 +616,6 @@ class ToolResourcesConfig:
         """
         self._file_search_vector_stores = value
 
-
 class AssistantConfig:
     """
     A class representing the configuration for an assistant.
@@ -658,6 +657,9 @@ class AssistantConfig:
 
         # Config folder for local assistant and threads configuration
         self._config_folder = None
+
+        #initialize AI client name
+        self._ai_client_name = config_data['ai_client_name'] if 'ai_client_name' in config_data else None
 
     def _setup_completion_settings(self, config_data):
         if config_data.get('completion_settings', None) is not None:
@@ -791,6 +793,7 @@ class AssistantConfig:
         self._config_data['assistant_role'] = self._assistant_role
         self._config_data['completion_settings'] = self._text_completion_config.to_dict() if self._text_completion_config is not None else None
         self._config_data['config_folder'] = self._config_folder
+        self._config_data['ai_client_name'] = self._ai_client_name
         return self._config_data
 
     def _get_function_configs(self):
@@ -1048,6 +1051,25 @@ class AssistantConfig:
         :type value: str
         """
         self._config_folder = value
+    
+    @property
+    def ai_client_name(self) -> str:
+        """Get the AI client name.
+        
+        :return: The AI client name.
+        :rtype: str
+        """
+        return self._ai_client_name
+    
+    @ai_client_name.setter
+    def ai_client_name(self, value) -> None:
+        """
+        Set the AI client name.
+        
+        :param value: The AI client name.
+        :type value: str
+        """
+        self._ai_client_name = value
 
     def _remove_trailing_spaces(self, text):
         return '\n'.join(line.rstrip() for line in text.splitlines())

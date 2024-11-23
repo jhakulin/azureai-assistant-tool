@@ -12,8 +12,14 @@ from azure.ai.assistant.management.ai_client_factory import AIClientType, AsyncA
 from azure.ai.assistant.management.ai_client_factory import AIClientFactory
 from azure.ai.assistant.management.exceptions import EngineError, InvalidJSONError
 from azure.ai.assistant.management.logger_module import logger
+from azure.ai.assistant.management.ai_client_azure_inference import AzureInferenceClient
+from azure.ai.assistant.management.ai_client_azure_openai import AzureOpenAIClient
+from azure.ai.assistant.management.ai_client_openai import OpenAIClient
+from azure.ai.assistant.management.async_ai_client_azure_inference import AsyncAzureInferenceClient
+from azure.ai.assistant.management.async_ai_client_azure_openai import AsyncAzureOpenAIClient
+from azure.ai.assistant.management.async_ai_client_openai import AsyncOpenAIClient
+from azure.ai.assistant.management.ai_client_config import AIClientConfig
 
-from openai import AzureOpenAI, OpenAI, AsyncAzureOpenAI, AsyncOpenAI
 from typing import Union
 
 import re, yaml, copy
@@ -58,7 +64,14 @@ class BaseAssistantClient:
             self._validate_config_data(self._config_data)
             self._name = self._config_data["name"]
             self._ai_client_type = self._get_ai_client_type(self._config_data["ai_client_type"], async_mode)
-            self._ai_client : Union[OpenAI, AsyncOpenAI, AzureOpenAI, AsyncAzureOpenAI] = self._get_ai_client(self._ai_client_type, **client_args)
+            ai_client_configs = AIClientConfig(self._ai_client_type, self._config_data.get('config_folder'))
+            ai_client_configs.get_all_ai_clients()
+            if "ai_client_name" in self._config_data and self._config_data["ai_client_name"] is not None:
+                self._ai_client_config = ai_client_configs.get_ai_client_by_name(self._config_data["ai_client_name"])
+                for key, value in self._ai_client_config.items():
+                    if key != 'name':
+                        client_args[key] = value
+            self._ai_client : Union[OpenAIClient, AsyncOpenAIClient, AzureOpenAIClient, AsyncAzureOpenAIClient, AzureInferenceClient, AsyncAzureInferenceClient] = self._get_ai_client(self._ai_client_type, **client_args)
             config_folder = None
             if "config_folder" in self._config_data:
                 config_folder = self._config_data["config_folder"]
@@ -318,11 +331,11 @@ class BaseAssistantClient:
         return self._assistant_config
     
     @property
-    def ai_client(self) -> Union[OpenAI, AsyncOpenAI, AzureOpenAI, AsyncAzureOpenAI]:
+    def ai_client(self) -> Union[OpenAIClient, AsyncOpenAIClient, AzureOpenAIClient, AsyncAzureOpenAIClient, AzureInferenceClient, AsyncAzureInferenceClient]:
         """
         The AI client used by the chat assistant.
 
         :return: The AI client.
-        :rtype: Union[OpenAI, AsyncOpenAI, AzureOpenAI, AsyncAzureOpenAI]
+        :rtype: Union[OpenAIClient, AsyncOpenAIClient, AzureOpenAIClient, AsyncAzureOpenAIClient, AzureInferenceClient, AsyncAzureInferenceClient]
         """
         return self._ai_client

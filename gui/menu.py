@@ -20,6 +20,7 @@ from gui.settings_dialogs import ClientSettingsDialog, GeneralSettingsDialog
 from gui.assistant_client_manager import AssistantClientManager
 from gui.log_broadcaster import LogBroadcaster
 
+from azure.core.credentials import AzureKeyCredential
 
 class AssistantsMenu:
     def __init__(self, main_window):
