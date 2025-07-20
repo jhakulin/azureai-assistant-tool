@@ -71,7 +71,7 @@ setup(
         "pyaudio",
         "numpy<2.2,>=1.24",  # Constrained to avoid conflict with realtime-ai
         "scipy",
-        "onnxruntime=1.19.0",  # Constrained to avoid conflict with python 3.12
+        "onnxruntime==1.19.0",  # Constrained to avoid conflict with python 3.12
         "resampy",
         "azure-ai-projects",
         "azure-ai-agents>=1.1.0b3",
