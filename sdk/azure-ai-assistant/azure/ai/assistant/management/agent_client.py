@@ -17,8 +17,8 @@ from azure.ai.assistant.management.base_assistant_client import BaseAssistantCli
 from azure.ai.assistant.management.conversation_thread_config import ConversationThreadConfig
 from azure.ai.assistant.management.exceptions import EngineError, InvalidJSONError
 from azure.ai.assistant.management.logger_module import logger
-from azure.ai.projects.models import RequiredFunctionToolCall, SubmitToolOutputsAction, ThreadRun
-from azure.ai.projects.models import CodeInterpreterTool, FileSearchTool, ToolSet, ToolResources, OpenApiTool, OpenApiAnonymousAuthDetails, AzureAISearchTool, BingGroundingTool, AzureFunctionTool, AzureFunctionStorageQueue
+from azure.ai.agents.models import RequiredFunctionToolCall, SubmitToolOutputsAction, ThreadRun
+from azure.ai.agents.models import CodeInterpreterTool, FileSearchTool, ToolSet, ToolResources, OpenApiTool, OpenApiAnonymousAuthDetails, AzureAISearchTool, BingGroundingTool, AzureFunctionTool, AzureFunctionStorageQueue
 
 
 class AgentClient(BaseAssistantClient):
@@ -191,19 +191,19 @@ class AgentClient(BaseAssistantClient):
             if assistant_config.tool_resources and assistant_config.tool_resources.code_interpreter_files:
                 logger.info(f"Code interpreter files in local: {assistant_config.tool_resources.code_interpreter_files}")
                 for file_id in code_interpreter_file_ids_cloud:
-                    file_name = self._ai_client.agents.get_file(file_id).filename
+                    file_name = self._ai_client.agents.files.get(file_id).filename
                     logger.info(f"Code interpreter file id: {file_id}, name: {file_name} in cloud")
 
             file_search_vs_ids_cloud = []
             if assistant.tool_resources and assistant.tool_resources.file_search:
                 file_search_vs_ids_cloud = assistant.tool_resources.file_search.vector_store_ids
-                files_in_vs_cloud = list(self._ai_client.agents.list_vector_store_files(file_search_vs_ids_cloud[0]))
+                files_in_vs_cloud = list(self._ai_client.agents.vector_store_files.list(file_search_vs_ids_cloud[0]))
                 file_search_file_ids_cloud = [file.id for file in files_in_vs_cloud]
 
             if assistant_config.tool_resources and assistant_config.tool_resources.file_search_vector_stores:
                 logger.info(f"File search vector stores in local: {assistant_config.tool_resources.file_search_vector_stores}")
                 for file_id in file_search_file_ids_cloud:
-                    file_name = self._ai_client.agents.get_file(file_id).filename
+                    file_name = self._ai_client.agents.files.get(file_id).filename
                     logger.info(f"File search file id: {file_id}, name: {file_name} in cloud")
 
             #assistant_config.tool_resources = ToolResourcesConfig(
@@ -339,7 +339,7 @@ class AgentClient(BaseAssistantClient):
             timeout: Optional[float] = None
     ) -> str:
         try:
-            client_vs = self._ai_client.agents.create_vector_store(
+            client_vs = self._ai_client.agents.vector_stores.create(
                 name=vector_store.name,
                 file_ids=list(vector_store.files.values()),
                 metadata=vector_store.metadata,
@@ -388,7 +388,7 @@ class AgentClient(BaseAssistantClient):
                 if cloud_agent.tool_resources.file_search:
                     existing_vs_ids = cloud_agent.tool_resources.file_search.vector_store_ids or []
                     if existing_vs_ids:
-                        vs_files = self._ai_client.agents.list_vector_store_files(existing_vs_ids[0])
+                        vs_files = self._ai_client.agents.vector_store_files.list(existing_vs_ids[0])
                         all_files_in_vs = vs_files.data
                         existing_fs_file_ids = {file.id for file in all_files_in_vs}
 
@@ -515,7 +515,7 @@ class AgentClient(BaseAssistantClient):
         thread_id = threads_config.get_thread_id_by_name(thread_name)
 
         try:
-            run_steps = self._ai_client.agents.list_run_steps(thread_id=thread_id, run_id=run_id)
+            run_steps = self._ai_client.agents.run_steps.list(thread_id=thread_id, run_id=run_id)
             return run_steps.data
         except Exception as e:
             logger.error(f"Failed to retrieve run steps for run {run_id}: {e}")
@@ -532,7 +532,7 @@ class AgentClient(BaseAssistantClient):
             text_completion_config = self._assistant_config.text_completion_config
             logger.info(f"Creating a run for agent: {self.assistant_config.assistant_id} and thread: {thread_id}")
 
-            run = self._ai_client.agents.create_run(
+            run = self._ai_client.agents.runs.create(
                 thread_id=thread_id,
                 agent_id=self.assistant_config.assistant_id,
                 additional_instructions=additional_instructions,
@@ -557,13 +557,13 @@ class AgentClient(BaseAssistantClient):
             is_first_message = True
             while True:
                 time.sleep(0.5)
-                run = self._ai_client.agents.get_run(thread_id=thread_id, run_id=run.id)
+                run = self._ai_client.agents.runs.get(thread_id=thread_id, run_id=run.id)
                 if run is None:
                     logger.error("Retrieved run is None, exiting the loop.")
                     return
 
                 if self._cancel_run_requested.is_set():
-                    self._ai_client.agents.cancel_run(thread_id=thread_id, run_id=run.id)
+                    self._ai_client.agents.runs.cancel(thread_id=thread_id, run_id=run.id)
                     self._cancel_run_requested.clear()
                     logger.info("Processing run cancelled by user, exiting the loop.")
                     return
@@ -618,7 +618,7 @@ class AgentClient(BaseAssistantClient):
             logger.info(f"Creating and streaming a run for agent: {self._assistant_config.assistant_id} and thread: {thread_id}")
             text_completion_config = self._assistant_config.text_completion_config
 
-            with self._ai_client.agents.create_stream(
+            with self._ai_client.agents.runs.stream(
                 thread_id=thread_id,
                 agent_id=self._assistant_config.assistant_id,
                 additional_instructions=additional_instructions,
@@ -639,7 +639,7 @@ class AgentClient(BaseAssistantClient):
     def _handle_required_action(self, name, thread_id, run_id, tool_calls, timeout: Optional[float] = None) -> bool:
         if tool_calls is None:
             logger.error("Processing run requires tool call action but no tool calls provided.")
-            self._ai_client.agents.cancel_run(thread_id=thread_id, run_id=run_id)
+            self._ai_client.agents.runs.cancel(thread_id=thread_id, run_id=run_id)
             return False
 
         tool_outputs, azure_function_in_tool_calls = self._process_tool_calls(name, run_id, tool_calls)
@@ -647,7 +647,7 @@ class AgentClient(BaseAssistantClient):
             return False
 
         if not azure_function_in_tool_calls:
-            self._ai_client.agents.submit_tool_outputs_to_run(
+            self._ai_client.agents.runs.submit_tool_outputs(
                 thread_id=thread_id,
                 run_id=run_id,
                 tool_outputs=tool_outputs,
@@ -712,12 +712,12 @@ class AgentClient(BaseAssistantClient):
         file_ids_to_delete = existing_file_ids - updated_file_ids
         logger.info(f"Deleting files: {file_ids_to_delete} from agent: {assistant_config.name} vector store: {vector_store_id}")
         for file_id in file_ids_to_delete:
-            self._ai_client.agents.delete_vector_store_file(
+            self._ai_client.agents.vector_store_files.delete(
                 vector_store_id=vector_store_id,
                 file_id=file_id,
             )
             if delete_from_service:
-                self._ai_client.agents.delete_file(file_id=file_id)
+                self._ai_client.agents.files.delete(file_id=file_id)
 
     def _upload_files_to_vector_store(
             self,
@@ -732,11 +732,11 @@ class AgentClient(BaseAssistantClient):
                 logger.info(f"Uploading file: {file_path} for agent: {assistant_config.name}")
 
                 with open(file_path, "rb") as f:
-                    uploaded_file = self._ai_client.agents.upload_file_and_poll(
+                    uploaded_file = self._ai_client.agents.files.upload_and_poll(
                         file=f,
                         purpose='assistants',
                     )
-                    file = self._ai_client.agents.create_vector_store_file_and_poll(
+                    file = self._ai_client.agents.vector_store_files.create_and_poll(
                         vector_store_id=vector_store_id,
                         file_id=uploaded_file.id,
                     )
@@ -754,7 +754,7 @@ class AgentClient(BaseAssistantClient):
             file_ids_to_delete = cloud_file_ids - local_file_ids
             logger.info(f"Deleting files: {file_ids_to_delete} for agent: {assistant_config.name}")
             for file_id in file_ids_to_delete:
-                self._ai_client.agents.delete_file(file_id=file_id)
+                self._ai_client.agents.files.delete(file_id=file_id)
         except Exception as e:
             logger.warning(f"Failed to delete files for agent: {assistant_config.name}: {e}")
             # ignore the error and continue
@@ -770,7 +770,7 @@ class AgentClient(BaseAssistantClient):
             if file_id is None:
                 logger.info(f"Uploading file: {file_path} for agent: {assistant_config.name}")
                 with open(file_path, "rb") as f:
-                    uploaded_file = self._ai_client.agents.upload_file(
+                    uploaded_file = self._ai_client.agents.files.upload(
                         file=f,
                         purpose='assistants',
                     )

@@ -17,7 +17,7 @@ from openai.types.beta.threads import (
 
 # Imports for Azure AI Agents / Projects
 from azure.ai.projects import AIProjectClient
-from azure.ai.projects.models import (
+from azure.ai.agents.models import (
     ThreadMessage,
     MessageTextContent,
     MessageImageFileContent,
@@ -193,7 +193,7 @@ class ConversationMessage:
                 elif isinstance(annotation, MessageTextFileCitationAnnotation):
                     file_id = annotation.file_citation.file_id
                     try:
-                        file_name = self._ai_client.agents.get_file(file_id).filename
+                        file_name = self._ai_client.agents.files.get(file_id).filename
                     except Exception as e:
                         logger.error(f"Failed to retrieve filename for file_id {file_id}: {e}")
                         file_name = f"Unknown_{file_id}"
@@ -389,7 +389,7 @@ class FileMessage:
                 with self._ai_client.with_streaming_response.files.content(self.file_id) as streamed_response:
                     streamed_response.stream_to_file(file_path)
             elif isinstance(self._ai_client, AIProjectClient):
-                self._ai_client.agents.save_file(file_id=self.file_id, file_name=self.file_name, target_dir=output_folder_name)
+                self._ai_client.agents.files.save(file_id=self.file_id, file_name=self.file_name, target_dir=output_folder_name)
 
             return file_path
         except Exception as e:
@@ -460,7 +460,7 @@ class ImageMessage:
                 img_base64 = base64.b64encode(resized_image_data).decode("utf-8")
                 return img_base64
             elif isinstance(self._ai_client, AIProjectClient):
-                file_content_stream = self._ai_client.agents.get_file_content(self.file_id)
+                file_content_stream = self._ai_client.agents.files.get_content(self.file_id)
                 if not file_content_stream:
                     logger.error(f"No content was retrievable for file_id '{self.file_id}'.")
                     return None
@@ -503,7 +503,7 @@ class ImageMessage:
                 resized_image_data = _resize_image(image_data, 0.5, 0.5)
                 _save_image(resized_image_data, file_path)
             elif isinstance(self._ai_client, AIProjectClient):
-                file_content_stream = self._ai_client.agents.get_file_content(self.file_id)
+                file_content_stream = self._ai_client.agents.files.get_content(self.file_id)
                 if not file_content_stream:
                     logger.error(f"No content was retrievable for file_id '{self.file_id}'.")
                     return None

@@ -93,16 +93,16 @@ class AIClientFactory:
             elif client_type == AIClientType.AZURE_AI_AGENT:
                 from azure.ai.projects import AIProjectClient
                 from azure.identity import DefaultAzureCredential
-                conn_str = os.getenv("PROJECT_CONNECTION_STRING")
-                if not conn_str:
+                project_endpoint = os.getenv("PROJECT_ENDPOINT")
+                if not project_endpoint:
                     raise ValueError(
-                        "No PROJECT_CONNECTION_STRING was found in environment variables. "
-                        "Please set PROJECT_CONNECTION_STRING to a valid Azure AI Agents "
+                        "No PROJECT_ENDPOINT was found in environment variables. "
+                        "Please set PROJECT_ENDPOINT to a valid Azure AI Agents "
                         "connection string to continue."
                     )
-                project_client = AIProjectClient.from_connection_string(
+                project_client = AIProjectClient(
+                    endpoint=project_endpoint,
                     credential=DefaultAzureCredential(),
-                    conn_str=conn_str,
                     **client_args
                 )
                 self._clients[client_key] = project_client
@@ -121,16 +121,16 @@ class AIClientFactory:
             elif client_type == AsyncAIClientType.AZURE_AI_AGENT:
                 from azure.ai.projects.aio import AIProjectClient
                 from azure.identity.aio import DefaultAzureCredential
-                conn_str = os.getenv("PROJECT_CONNECTION_STRING")
-                if not conn_str:
+                project_endpoint = os.getenv("PROJECT_ENDPOINT")
+                if not project_endpoint:
                     raise ValueError(
-                        "No PROJECT_CONNECTION_STRING was found in environment variables. "
-                        "Please set PROJECT_CONNECTION_STRING to a valid Azure AI Agents "
+                        "No PROJECT_ENDPOINT was found in environment variables. "
+                        "Please set PROJECT_ENDPOINT to a valid Azure AI Agents "
                         "connection string to continue."
                     )
-                project_client = AIProjectClient.from_connection_string(
+                project_client = AIProjectClient(
+                    endpoint=project_endpoint,
                     credential=DefaultAzureCredential(),
-                    conn_str=conn_str,
                     **client_args
                 )
                 self._clients[client_key] = project_client

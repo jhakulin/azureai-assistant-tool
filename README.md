@@ -187,16 +187,8 @@ Based on your choice earlier, gather these required credentials:
 
 If you selected Azure AI Agents, you need the following from your Azure AI Foundry Project on Azure Portal:
 
-- ✅ **PROJECT_CONNECTION_STRING** (mandatory, from Azure AI Foundry Project Overview page)
+- ✅ **PROJECT_ENDPOINT** (mandatory, from Azure AI Foundry Portal Project Overview page)
 - ✅ **MODEL DEPLOYMENT NAME** *(Required when creating Azure AI Agent using the tool.)*
-
-**Example Connection String:**
-
-`eastus.api.azureml.ms;12345678-abcd-1234-9fc6-62780b3d3e05;my-resource-group;my-project-name`
-
-**Example Model Deployment Name** (Model deployment used by the tool):
-
-`gpt-4o`
 
 
 #### ▶️ **Azure OpenAI Assistants**
@@ -218,12 +210,12 @@ Set these environment variables according to your chosen setup:
 
 **Windows CMD**
 ```cmd
-set PROJECT_CONNECTION_STRING=<your connection string>
+set PROJECT_ENDPOINT=<your project endpoint>
 ```
 
 **Linux/MacOS (bash)**
 ```bash
-export PROJECT_CONNECTION_STRING="<your connection string>"
+export PROJECT_ENDPOINT="<your project endpoint>"
 ```
 
 > 🚩 No additional variables required for Azure AI Agents.

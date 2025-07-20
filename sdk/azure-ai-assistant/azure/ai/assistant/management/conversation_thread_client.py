@@ -14,7 +14,7 @@ from azure.ai.assistant.management.assistant_config_manager import AssistantConf
 from azure.ai.assistant.management.exceptions import EngineError
 from azure.ai.assistant.management.logger_module import logger
 
-from azure.ai.projects.models import ThreadMessage
+from azure.ai.agents.models import ThreadMessage
 from openai.types.beta.threads import Message
 
 
@@ -326,13 +326,13 @@ class ConversationThreadClient:
 
     def _create_thread_impl(self, timeout: Optional[float] = None):
         if self._ai_client_type == AIClientType.AZURE_AI_AGENT:
-            return self._ai_client.agents.create_thread()
+            return self._ai_client.agents.threads.create()
         else:
             return self._ai_client.beta.threads.create(timeout=timeout)
 
     def _delete_thread_impl(self, thread_id: str, timeout: Optional[float] = None):
         if self._ai_client_type == AIClientType.AZURE_AI_AGENT:
-            self._ai_client.agents.delete_thread(thread_id=thread_id)
+            self._ai_client.agents.threads.delete(thread_id=thread_id)
         else:
             self._ai_client.beta.threads.delete(thread_id=thread_id, timeout=timeout)
 
@@ -346,7 +346,7 @@ class ConversationThreadClient:
 
     def _list_messages_impl(self, thread_id: str, timeout: Optional[float] = None) -> List[Union[ThreadMessage, Message]]:
         if self._ai_client_type == AIClientType.AZURE_AI_AGENT:
-            resp = self._ai_client.agents.list_messages(thread_id=thread_id)
+            resp = self._ai_client.agents.messages.list(thread_id=thread_id)
             return resp.data
         else:
             resp = self._ai_client.beta.threads.messages.list(thread_id=thread_id, timeout=timeout)
@@ -362,7 +362,7 @@ class ConversationThreadClient:
         timeout: Optional[float]
     ) -> None:
         if self._ai_client_type == AIClientType.AZURE_AI_AGENT:
-            self._ai_client.agents.create_message(
+            self._ai_client.agents.messages.create(
                 thread_id=thread_id,
                 role=role,
                 content=content,
@@ -438,6 +438,6 @@ class ConversationThreadClient:
 
     def _create_file_impl(self, file_path: str, purpose: str, timeout: Optional[float] = None):
         if self._ai_client_type == AIClientType.AZURE_AI_AGENT:
-            return self._ai_client.agents.upload_file(file=open(file_path, "rb"), purpose=purpose)
+            return self._ai_client.agents.files.upload(file=open(file_path, "rb"), purpose=purpose)
         else:
             return self._ai_client.files.create(file=open(file_path, "rb"), purpose=purpose, timeout=timeout)

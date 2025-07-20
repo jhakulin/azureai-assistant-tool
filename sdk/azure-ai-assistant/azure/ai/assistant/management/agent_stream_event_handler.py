@@ -7,7 +7,7 @@ from azure.ai.assistant.management.message import ConversationMessage, TextMessa
 from azure.ai.assistant.management.conversation_thread_config import ConversationThreadConfig
 from azure.ai.assistant.management.logger_module import logger
 
-from azure.ai.projects.models import (
+from azure.ai.agents.models import (
     AgentEventHandler,
     SubmitToolOutputsAction,
     RunStep,
@@ -158,7 +158,7 @@ class AgentStreamEventHandler(AgentEventHandler):
 
             if not tool_calls:
                 logger.error(f"Run requires tool outputs but no tool calls provided. Cancelling run: {run.id}")
-                self._parent._ai_client.agents.cancel_run(thread_id=self._thread_id, run_id=run.id, timeout=self._timeout)
+                self._parent._ai_client.agents.runs.cancel(thread_id=self._thread_id, run_id=run.id, timeout=self._timeout)
                 return
 
             logger.info(f"Handling required action for run_id: {run.id}")
@@ -169,7 +169,7 @@ class AgentStreamEventHandler(AgentEventHandler):
                 return
 
             logger.info("Submitting tool outputs with stream")
-            self._parent._ai_client.agents.submit_tool_outputs_to_stream(
+            self._parent._ai_client.agents.runs.submit_tool_outputs_stream(
                 thread_id=self._thread_id,
                 run_id=run.id,
                 tool_outputs=tool_outputs,

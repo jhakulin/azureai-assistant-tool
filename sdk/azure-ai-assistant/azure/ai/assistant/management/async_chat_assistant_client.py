@@ -237,7 +237,7 @@ class AsyncChatAssistantClient(BaseChatAssistantClient):
                     break
 
                 try:
-                    if not (model.startswith("o1") or model.startswith("o3")):
+                    if not (model.startswith("o1") or model.startswith("o3") or model.startswith("o4")):
                         response = await self._async_client.chat.completions.create(
                             model=model,
                             messages=self._messages,
@@ -274,7 +274,7 @@ class AsyncChatAssistantClient(BaseChatAssistantClient):
                                 self._messages[i]["role"] = "system"
 
                         # Retry creation call after removing the "developer" role
-                        if not (model.startswith("o1") or model.startswith("o3")):
+                        if not (model.startswith("o1") or model.startswith("o3") or model.startswith("o4")):
                             response = await self._async_client.chat.completions.create(
                                 model=model,
                                 messages=self._messages,

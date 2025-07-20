@@ -69,14 +69,16 @@ setup(
         "Pillow",
         "PyYAML",
         "pyaudio",
-        "numpy",
+        "numpy<2.2,>=1.24",  # Constrained to avoid conflict with realtime-ai
         "scipy",
-        "onnxruntime",
+        "onnxruntime=1.19.0",  # Constrained to avoid conflict with python 3.12
         "resampy",
         "azure-ai-projects",
+        "azure-ai-agents>=1.1.0b3",
         "azure-identity",
         "azure-mgmt-logic",
         "azure-mgmt-web",
+        "protobuf<6.0.0,>=3.20.2",  # Constrained to avoid conflicts with Google packages
     ],
     python_requires=">=3.8",
     project_urls={
