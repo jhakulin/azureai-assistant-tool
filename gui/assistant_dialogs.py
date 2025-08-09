@@ -489,7 +489,7 @@ class AssistantConfigDialog(QDialog):
             azure_search_ids = []
             for conn in conn_list:
                 # Check your actual condition for Azure AI Search
-                if conn.connection_type == "CognitiveSearch":
+                if conn.type == "CognitiveSearch":
                     azure_search_ids.append(conn.id)
             return azure_search_ids
         except Exception as e:
@@ -503,7 +503,7 @@ class AssistantConfigDialog(QDialog):
             bing_ids = []
             for conn in conn_list:
                 # Check your actual condition for Bing 
-                if conn.endpoint_url and conn.endpoint_url.lower().startswith("https://api.bing.microsoft.com"):
+                if conn.target and conn.target.lower().startswith("https://api.bing.microsoft.com"):
                     bing_ids.append(conn.id)
             return bing_ids
         except Exception as e:

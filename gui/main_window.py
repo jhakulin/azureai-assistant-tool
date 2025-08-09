@@ -282,8 +282,8 @@ class MainWindow(QMainWindow, AssistantClientCallbacks, TaskManagerCallbacks):
 
         # If it's an AZURE_AI_AGENT, set up Azure Logic App, TODO: move this to Functions menu
         if self.active_ai_client_type == AIClientType.AZURE_AI_AGENT:
-            subscription_id = client.scope["subscription_id"]
-            resource_group = client.scope["resource_group_name"]
+            subscription_id = os.getenv("AZURE_SUBSCRIPTION_ID", "your_subscription_id")
+            resource_group = os.getenv("AZURE_RESOURCE_GROUP", "your_resource_group_name")
             self.azure_logic_app_manager = AzureLogicAppManager.get_instance(subscription_id, resource_group)
             self.azure_function_manager = AzureFunctionManager.get_instance(subscription_id, resource_group)
 

@@ -97,8 +97,7 @@ class AIClientFactory:
                 if not project_endpoint:
                     raise ValueError(
                         "No PROJECT_ENDPOINT was found in environment variables. "
-                        "Please set PROJECT_ENDPOINT to a valid Azure AI Agents "
-                        "connection string to continue."
+                        "Please set valid PROJECT_ENDPOINT from Azure AI Portal overview page. "
                     )
                 project_client = AIProjectClient(
                     endpoint=project_endpoint,
@@ -125,8 +124,7 @@ class AIClientFactory:
                 if not project_endpoint:
                     raise ValueError(
                         "No PROJECT_ENDPOINT was found in environment variables. "
-                        "Please set PROJECT_ENDPOINT to a valid Azure AI Agents "
-                        "connection string to continue."
+                        "Please set valid PROJECT_ENDPOINT from Azure AI Portal overview page. "
                     )
                 project_client = AIProjectClient(
                     endpoint=project_endpoint,

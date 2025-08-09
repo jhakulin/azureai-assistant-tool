@@ -188,6 +188,8 @@ Based on your choice earlier, gather these required credentials:
 If you selected Azure AI Agents, you need the following from your Azure AI Foundry Project on Azure Portal:
 
 - ✅ **PROJECT_ENDPOINT** (mandatory, from Azure AI Foundry Portal Project Overview page)
+- ✅ **AZURE_SUBSCRIPTION_ID** (optional, used for logic apps and azure functions, from Azure AI Foundry Portal Project Overview page)
+- ✅ **AZURE_RESOURCE_GROUP** (optional, used for logic apps and azure functions, from Azure AI Foundry Portal Project Overview page)
 - ✅ **MODEL DEPLOYMENT NAME** *(Required when creating Azure AI Agent using the tool.)*
 
 
