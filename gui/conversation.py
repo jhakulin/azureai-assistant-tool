@@ -8,8 +8,8 @@ from azure.ai.assistant.management.assistant_config_manager import AssistantConf
 from azure.ai.assistant.management.message import ConversationMessage
 from azure.ai.assistant.management.logger_module import logger
 
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QTextEdit, QMessageBox
-from PySide6.QtGui import QFont, QTextCursor,QDesktopServices, QMouseEvent, QGuiApplication, QPalette, QImage
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QTextEdit
+from PySide6.QtGui import QFont, QTextCursor, QDesktopServices, QMouseEvent, QGuiApplication, QPalette, QImage
 from PySide6.QtCore import Qt, QUrl, QMimeData, QIODevice, QBuffer
 from bs4 import BeautifulSoup
 
@@ -19,6 +19,7 @@ from typing import List
 from collections import defaultdict
 import threading
 from enum import Enum
+import markdown
 
 
 class AssistantStreamingState(Enum):
@@ -31,56 +32,39 @@ class ConversationInputView(QTextEdit):
 
     def __init__(self, parent, main_window):
         super().__init__(parent)
-        self.main_window = main_window  # reference to the main window
+        self.main_window = main_window
         self.setInitialPlaceholderText()
-
-        # A list to keep track of image attachments (file paths) pasted in this text editor
         self.pasted_attachments = []
-        # A dictionary to map file_path -> the HTML snippet inserted for that image
         self.pasted_images_html = {}
 
     def setInitialPlaceholderText(self):
         self.setText(self.PLACEHOLDER_TEXT)
 
     def focusInEvent(self, event):
-        # Clear the placeholder text on first focus and do not set it again
         if self.toPlainText() == self.PLACEHOLDER_TEXT:
             self.clear()
         super().focusInEvent(event)
 
     def keyPressEvent(self, event):
-        # Clear the placeholder text on first key press and do not set it again
         if self.toPlainText() == self.PLACEHOLDER_TEXT and not event.text().isspace():
             self.clear()
 
-        cursor = self.textCursor()
         if event.key() in (Qt.Key_Delete, Qt.Key_Backspace):
-            # Save the HTML before
             html_before = self.toHtml()
-
-            # Let the parent handle the actual deletion
             super().keyPressEvent(event)
-
-            # Compare the HTML after
             html_after = self.toHtml()
             self.check_for_deleted_images(html_before, html_after)
-
-        # Detect Enter/Return (no modifiers) to send the message
         elif event.key() in (Qt.Key_Return, Qt.Key_Enter) and not (event.modifiers() & Qt.ShiftModifier):
             user_text = self.toPlainText()
-            # Gather the pasted image file paths
             pasted_images = list(self.pasted_attachments)
-            # Clear them out locally
             self.pasted_attachments.clear()
-
             self.main_window.on_user_input_complete(user_text, pasted_image_file_paths=pasted_images)
-
             self.clear()
         else:
             super().keyPressEvent(event)
 
     def get_and_clear_pasted_attachments(self):
-        images = list(self.pasted_attachments)  # make a copy
+        images = list(self.pasted_attachments)
         self.pasted_attachments.clear()
         return images
 
@@ -119,7 +103,6 @@ class ConversationInputView(QTextEdit):
                 else:
                     super().insertFromMimeData(mimeData)
         elif mimeData.hasText():
-            # Plain text fallback
             super().insertFromMimeData(mimeData)
         else:
             super().insertFromMimeData(mimeData)
@@ -135,11 +118,10 @@ class ConversationInputView(QTextEdit):
         buffer.open(QIODevice.WriteOnly)
         image_thumbnail.save(buffer, "PNG")
         base64_data = buffer.data().toBase64().data().decode()
-        html = f'<img src="data:image/png;base64,{base64_data}" alt="{file_path}" />'
-        
+        html_img = f'<img src="data:image/png;base64,{base64_data}" alt="{file_path}" />'
         cursor = self.textCursor()
-        cursor.insertHtml(html)
-        self.pasted_images_html[file_path] = html
+        cursor.insertHtml(html_img)
+        self.pasted_images_html[file_path] = html_img
         if file_path not in self.pasted_attachments:
             self.pasted_attachments.append(file_path)
 
@@ -150,7 +132,6 @@ class ConversationInputView(QTextEdit):
         file_paths_before = {img.get('alt', '') for img in soup_before.find_all('img')}
         file_paths_after = {img.get('alt', '') for img in soup_after.find_all('img')}
 
-        # Identify which images are missing
         missing_file_paths = file_paths_before - file_paths_after
         if missing_file_paths:
             logger.debug(f"User removed images: {missing_file_paths}")
@@ -164,10 +145,8 @@ class ConversationInputView(QTextEdit):
     def mouseReleaseEvent(self, event):
         cursor = self.cursorForPosition(event.pos())
         anchor = cursor.charFormat().anchorHref()
-
         if anchor:
             QDesktopServices.openUrl(QUrl(anchor))
-
         super().mouseReleaseEvent(event)
 
     def mousePressEvent(self, event):
@@ -177,28 +156,62 @@ class ConversationInputView(QTextEdit):
 class ClickableTextEdit(QTextEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.parent_widget = parent  # if you need back‐references
+        self.parent_widget = parent
+        self._toggle_provider = None  # ConversationView
+
+    def set_toggle_provider(self, provider):
+        self._toggle_provider = provider
 
     def mousePressEvent(self, event: QMouseEvent):
-        # Only process left‐button clicks for links
         if event.button() == Qt.LeftButton:
-            # Find the character position under the mouse
             cursor = self.cursorForPosition(event.pos())
-            char_format = cursor.charFormat()
-
-            # If there's an HTML anchor (href) at this position, open it
-            href = char_format.anchorHref()
+            href = cursor.charFormat().anchorHref()
             if href:
-                if href.startswith("http://") or href.startswith("https://"):
+                if href.startswith(("http://", "https://")):
                     QDesktopServices.openUrl(QUrl(href))
                 else:
-                    # Otherwise treat it as a local file path
                     self.open_file(href)
-                # Stop further text‐edit handling of this mouse press
                 return
-
-        # If no anchor was found, let the parent class handle normal text selection, etc.
         super().mousePressEvent(event)
+
+    def contextMenuEvent(self, event):
+        menu = self.createStandardContextMenu()
+        if self._toggle_provider:
+            menu.addSeparator()
+            act = menu.addAction("Formatted (Markdown)")
+            act.setCheckable(True)
+            act.setChecked(self._toggle_provider.get_markdown_enabled())
+            act.triggered.connect(lambda checked: self._toggle_provider.set_markdown_enabled(checked))
+        menu.exec(event.globalPos())
+
+    def mouseDoubleClickEvent(self, event: QMouseEvent):
+        cursor = self.cursorForPosition(event.pos())
+        block = cursor.block()
+        if block.isValid() and self._is_pre_block(block):
+            first = block
+            last = block
+            b = block.previous()
+            while b.isValid() and self._is_pre_block(b):
+                first = b
+                b = b.previous()
+            b = block.next()
+            while b.isValid() and self._is_pre_block(b):
+                last = b
+                b = b.next()
+            sel = QTextCursor(first)
+            start_pos = first.position()
+            end_pos = last.position() + last.length() - 1
+            sel.setPosition(start_pos, QTextCursor.MoveAnchor)
+            sel.setPosition(end_pos, QTextCursor.KeepAnchor)
+            self.setTextCursor(sel)
+            return
+        super().mouseDoubleClickEvent(event)
+
+    def _is_pre_block(self, block):
+        try:
+            return block.blockFormat().nonBreakableLines()
+        except Exception:
+            return False
 
     def open_file(self, file_path):
         try:
@@ -215,22 +228,28 @@ class ClickableTextEdit(QTextEdit):
 class ConversationView(QWidget):
     def __init__(self, parent, main_window):
         super().__init__(parent)
-        self.main_window = main_window  # Store a reference to the main window
+        self.main_window = main_window
         self.assistant_config_manager = AssistantConfigManager.get_instance()
-        self.init_ui()
+
+        # Output folder
+        self.file_path = 'output'
+        os.makedirs(self.file_path, exist_ok=True)
+
+        # State
         self.text_to_url_map = {}
-        self.streaming_buffer = defaultdict(list)
+        self.streaming_buffer = defaultdict(list)  # sender -> [chunks]
         self.stream_snapshot = defaultdict(str)
         self.is_assistant_streaming = defaultdict(lambda: AssistantStreamingState.NOT_STREAMING)
+        self.stream_regions = defaultdict(dict)    # sender -> {header_start, start, end}
         self._lock = threading.RLock()
-        
-        # TODO make this better configurable. To have the output folder for each assistant is good, however
-        # if assistant gets destroyed at some point, the output folder cannot be accessed from assistant config
-        # anymore. So maybe it could be better to have a global output folder and then subfolders for each 
-        # assistant names
-        self.file_path = 'output'
-        # Create the output directory if it doesn't exist
-        os.makedirs(self.file_path, exist_ok=True)
+
+        # Render mode and history for re-rendering
+        self._markdown_enabled = True
+        self._history = []  # items: {'kind':'text'|'image', ...}
+
+        self._build_markdown_converter()
+        self.init_ui()
+        self.apply_document_theme_styles()
 
     def init_ui(self):
         self.layout = QVBoxLayout(self)
@@ -239,10 +258,14 @@ class ConversationView(QWidget):
         self.conversationView.setReadOnly(True)
         self.conversationView.setFont(QFont("Arial", 11))
         self.conversationView.setTextInteractionFlags(Qt.TextSelectableByMouse | Qt.LinksAccessibleByMouse)
+        self.conversationView.set_toggle_provider(self)
+
+        base = QUrl.fromLocalFile(os.path.abspath(self.file_path) + os.sep)
+        self.conversationView.document().setBaseUrl(base)
 
         self.inputField = ConversationInputView(self, self.main_window)
-        self.inputField.setAcceptRichText(False)  # Accept only plain text
-        self.inputField.setFixedHeight(100)  # Set an initial height
+        self.inputField.setAcceptRichText(False)
+        self.inputField.setFixedHeight(100)
         self.inputField.setToolTip("Type a message or paste an image here for the assistant.")
         self.inputField.setFont(QFont("Arial", 11))
 
@@ -251,34 +274,17 @@ class ConversationView(QWidget):
 
         self.conversationView.setStyleSheet("""
             QTextEdit {
-                border: 1px solid #c0c0c0; /* Adjusted to have a 1px solid border */
+                border: 1px solid #c0c0c0;
                 border-color: #a0a0a0 #ffffff #ffffff #a0a0a0;
                 border-radius: 4px;
-                padding: 1px; /* Adds padding inside the QTextEdit widget */
-            }
-            .code-block {
-                background-color: #eeeeee;
-                font-family: "Courier New", monospace;
-                border: 1px solid #cccccc; /* Thin border for code blocks */
-                white-space: pre-wrap;
-                display: block; /* Ensures that the block is on its own line */
-                margin: 2px 0; /* Adds a small margin above and below the code block */
-                outline: 1px solid #cccccc; /* Add an outline to ensure visibility */
-            }
-            .text-block {
-                background-color: white;
-                font-family: Arial;
-                white-space: pre-wrap;
-                display: block; /* Ensures that the block is on its own line */
-                margin: 2px 0; /* Adds a small margin above and below the text block */
+                padding: 1px;
             }
         """)
-
         self.inputField.setStyleSheet(
             "QTextEdit {"
             "  border-style: solid;"
             "  border-width: 1px;"
-            "  border-color: #a0a0a0 #ffffff #ffffff #a0a0a0;"  # Light on top and left, dark on bottom and right
+            "  border-color: #a0a0a0 #ffffff #ffffff #a0a0a0;"
             "  padding: 1px;"
             "}"
         )
@@ -289,51 +295,203 @@ class ConversationView(QWidget):
     def is_dark_mode(self):
         app = QGuiApplication.instance()
         if app is not None:
-            # Get the default window background color from the application palette
             windowBackgroundColor = app.palette().color(QPalette.ColorRole.Window)
-            # Calculate the lightness (value between 0 for black and 255 for white)
-            lightness = windowBackgroundColor.lightness()
-            # Assuming dark mode if the lightness is below a certain threshold
-            # Here, 127 is used as a threshold, considering the scale is from 0 to 255
-            return lightness < 127
+            return windowBackgroundColor.lightness() < 127
         return False
+
+    def apply_document_theme_styles(self) -> None:
+        dark = self.is_dark_mode()
+        text_fg        = "#dcdcdc" if dark else "#24292e"
+        link_fg        = "#4ea1ff" if dark else "#0066cc"
+        code_bg        = "#1e1e1e" if dark else "#f6f8fa"
+        code_border    = "#3c3c3c" if dark else "#d0d7de"
+        subtle_border  = "#2a2a2a" if dark else "#e6e6e6"
+        tbl_header_bg  = "#2a2a2a" if dark else "#f2f2f2"
+        quote_bg       = "#252525" if dark else "#f8f9fb"
+        quote_border   = "#3c3c3c" if dark else "#d0d7de"
+
+        css = f"""
+        /* Scope all markdown output inside .md-root to stabilize font metrics */
+        .md-root {{
+            color: {text_fg};
+            font-family: 'Segoe UI', Arial, sans-serif;
+            font-size: 14px;
+            line-height: 1.55;
+        }}
+        .md-root a {{
+            color: {link_fg};
+            text-decoration: underline;
+        }}
+
+        /* speaker label */
+        .sender {{
+            font-weight: 600;
+            font-size: 1.0em;
+            vertical-align: baseline;
+        }}
+
+        /* headings */
+        .md-root h1, .md-root h2, .md-root h3, .md-root h4, .md-root h5, .md-root h6 {{
+            color: {text_fg};
+            font-weight: 600;
+            line-height: 1.25;
+            margin: 0.6em 0 0.3em;  /* slightly tighter */
+        }}
+        .md-root h1 {{ font-size: 1.25em; }}
+        .md-root h2 {{ font-size: 1.18em; }}
+        .md-root h3 {{ font-size: 1.12em; }}
+        .md-root h4 {{ font-size: 1.06em; }}
+        .md-root h5 {{ font-size: 1.03em; }}
+        .md-root h6 {{ font-size: 1.00em; }}
+
+        /* tighter body spacing */
+        .md-root p {{ margin: 0.3em 0; }}
+        .md-root ul, .md-root ol {{ margin: 0.3em 0 0.3em 1.2em; }}
+
+        /* code blocks */
+        .md-root pre {{
+            background   : {code_bg};
+            border       : 1px solid {code_border};
+            border-radius: 6px;
+            padding      : 8px 10px;
+            white-space  : pre;
+            font-family  : Consolas, "Courier New", monospace;
+            margin       : 0.35em 0;   /* tighter */
+            font-size    : 0.94em;
+            overflow-x   : auto;
+        }}
+
+        /* inline code */
+        .md-root code {{
+            background   : {code_bg};
+            border       : 1px solid {code_border};
+            border-radius: 4px;
+            padding      : 0 3px;
+            font-family  : Consolas, "Courier New", monospace;
+            font-size    : 0.95em;
+        }}
+
+        /* tables */
+        .md-root table {{ border-collapse: collapse; width: 100%; margin: 0.35em 0; }}
+        .md-root th, .md-root td {{ border: 1px solid {subtle_border}; padding: 6px 8px; }}
+        .md-root th {{ background: {tbl_header_bg}; }}
+
+        /* quotes and rules */
+        .md-root blockquote {{
+            margin      : 0.35em 0;
+            padding     : 6px 10px;
+            border-left : 4px solid {quote_border};
+            background  : {quote_bg};
+        }}
+        .md-root hr {{
+            border: none;
+            border-top: 1px solid {subtle_border};
+            margin: 8px 0;  /* tighter */
+        }}
+
+        .md-root img {{ max-width: 100%; height: auto; }}
+        """
+        self.conversationView.document().setDefaultStyleSheet(css)
+
+    def _build_markdown_converter(self) -> None:
+        dark = self.is_dark_mode()
+        style_name = "native" if dark else "default"
+        self._md = markdown.Markdown(
+            extensions=[
+                "extra",          # fenced_code, tables, etc.
+                "sane_lists",
+                "smarty",
+                "toc",
+                "codehilite"
+            ],
+            extension_configs={
+                "codehilite": {
+                    "guess_lang":     False,
+                    "pygments_style": style_name,
+                    "linenums":       False,
+                    "noclasses":      True   # inline styles so Qt renders nicely
+                }
+            },
+            output_format="xhtml"
+        )
+
+    def render_markdown_to_html(self, text: str) -> str:
+        self._md.reset()
+        html_out = self._md.convert(text or "")
+        return self._post_process_links_and_images(html_out)
+
+    def _post_process_links_and_images(self, html_in: str) -> str:
+        try:
+            soup = BeautifulSoup(html_in, "html.parser")
+
+            # Fix anchor hrefs
+            for a in soup.find_all("a", href=True):
+                href = a["href"].strip()
+                if href.startswith(("http://", "https://")):
+                    continue
+                href = re.sub(r'^sandbox:[/\\](?:mnt[/\\]data[/\\])?', '', href)
+                local_path = os.path.normpath(os.path.join(self.file_path, href))
+                a["href"] = local_path
+                a["download"] = os.path.basename(local_path)
+
+            # Fix images
+            for img in soup.find_all("img", src=True):
+                src = img["src"].strip()
+                if src.startswith(("http://", "https://", "data:")):
+                    continue
+                src = re.sub(r'^sandbox:[/\\](?:mnt[/\\]data[/\\])?', '', src)
+                local_img = os.path.normpath(os.path.join(self.file_path, src))
+                img["src"] = QUrl.fromLocalFile(local_img).toString()
+
+            return str(soup)
+        except Exception as e:
+            logger.warning(f"Link/image post-process failed: {e}")
+            return html_in
+
+    def reset_for_new_thread(self) -> None:
+        """Clear all per-thread UI state so toggles/streams don't leak between threads."""
+        with self._lock:
+            self._history.clear()
+            self.text_to_url_map = {}
+
+            self.streaming_buffer.clear()
+            self.stream_snapshot.clear()
+            self.stream_regions.clear()
+            self.is_assistant_streaming.clear()
+
+            self.conversationView.clear()
 
     def append_conversation_messages(self, messages: List[ConversationMessage]):
         logger.info(f"Appending full conversation: {len(messages)} messages to the conversation view")
-        self.text_to_url_map = {}
+        # New thread load: fully reset prior UI/history to avoid leakage
+        self.reset_for_new_thread()
         for message in reversed(messages):
             self.append_conversation_message(message, full_messages_append=True)
 
     def append_conversation_message(self, message: ConversationMessage, full_messages_append=False):
-        # Handle text message content
         if message.text_message:
             text_message = message.text_message
-            # Determine the color based on the role and the theme
-            if self.is_dark_mode():
-                # Colors for dark mode
-                color = 'blue' if message.sender == "user" else '#D3D3D3'
-            else:
-                # Colors for light mode
-                color = 'blue' if message.sender == "user" else 'black'
+            color = 'blue' if message.sender == "user" else ('#D3D3D3' if self.is_dark_mode() else 'black')
+            self._history.append({"kind": "text", "sender": message.sender, "color": color, "content": text_message.content})
+            self._render_text_item(message.sender, color, text_message.content)
 
-            # Append the formatted text message
-            self.append_message(message.sender, text_message.content, color=color, full_messages_append=full_messages_append)
-
-        # Handle file message content
         if len(message.file_messages) > 0:
             for file_message in message.file_messages:
-                # Synchronously retrieve and process the file
                 file_path = file_message.retrieve_file(self.file_path)
                 if file_path:
-                    self.append_message(message.sender, f"File saved: {file_path}", color='green', full_messages_append=full_messages_append)
+                    link_text = os.path.basename(file_path)
+                    info = f"File saved: [{link_text}]({link_text})"
+                    self._history.append({"kind": "text", "sender": message.sender, "color": "green", "content": info})
+                    self._render_text_item(message.sender, "green", info)
 
-        # Handle image message content
         if len(message.image_messages) > 0:
             for image_message in message.image_messages:
-                # Synchronously retrieve and process the image
                 image_path = image_message.retrieve_image(self.file_path)
                 if image_path:
-                    self.append_image(image_path)
+                    self._history.append({"kind": "image", "path": image_path})
+                    self._render_image_item(image_path)
+
+        self.scroll_to_bottom()
 
     def convert_image_to_base64(self, image_path):
         with open(image_path, "rb") as image_file:
@@ -341,227 +499,186 @@ class ConversationView(QWidget):
         return encoded_string
 
     def append_image(self, image_path):
-        base64_image = self.convert_image_to_base64(image_path)
-        # Move cursor to the end for each insertion
-        self.conversationView.moveCursor(QTextCursor.End)
-
-        image_html = f"<img src='data:image/png;base64,{base64_image}' alt='Image' style='width:100px; height:auto;'>"
-        self.conversationView.insertHtml(image_html)
-        self.conversationView.insertHtml("<br><br>")
-
+        # public helper
+        self._history.append({"kind": "image", "path": image_path})
+        self._render_image_item(image_path)
         self.scroll_to_bottom()
 
     def append_message(self, sender, message, color='black', full_messages_append=False):
-
-        # Insert sender's name in bold
-        html_content = f"<b style='color:{color};'>{sender}:</b> "
+        # record
+        self._history.append({"kind": "text", "sender": sender, "color": color, "content": message})
 
         with self._lock:
             if self.is_any_assistant_streaming() and sender == "user" and not full_messages_append:
-                logger.info(f"Append USER MESSAGE while assistant is streaming, clear and save streaming content")
+                # Save and remove any in-progress assistant stream BEFORE showing the user message.
+                # Do NOT restore here; new assistant answer will start a fresh stream.
                 self.clear_and_save_assistant_streaming()
             elif self.is_any_assistant_streaming() and sender != "user":
-                logger.info(f"Clear ASSISTANT: {sender} streaming content, full_messages_append: {full_messages_append}")
                 self.clear_assistant_streaming(sender)
 
-            # Generate HTML content based on message segments
-            for is_code, text in self.parse_message(message):
-                if is_code:
-                    escaped_code = html.escape(text).replace('\n', '<br>')
-                    formatted_code = f"<pre class='code-block'>{escaped_code}</pre>"
-                    html_content += formatted_code
-                else:
-                    text = self.format_links(text)
-                    #text = self.format_urls(text)
-                    formatted_text = f"<span class='text-block' style='white-space: pre-wrap;'>{text}</span>"
-                    html_content += formatted_text
-                html_content += "<br>"
-            html_content += "<br>"
-
-            # Insert the complete HTML content in one go
-            self.conversationView.moveCursor(QTextCursor.End)
-            self.conversationView.insertHtml(html_content)
+            self._render_text_item(sender, color, message)
             self.scroll_to_bottom()
 
-            if self.is_any_assistant_streaming() and sender == "user" and not full_messages_append:
-                self.restore_assistant_streaming()
+            # Intentionally no restore here to avoid flash.
+
+    def _render_text_item(self, sender: str, color: str, message: str) -> None:
+        header_html = f"<span class='sender' style='color:{color};'>{html.escape(sender)}:</span> "
+        if self._markdown_enabled:
+            body_html = f"<div class='md-root'>{self.render_markdown_to_html(message)}</div>"
+        else:
+            body_html = f"<div class='md-root'><pre>{html.escape(message)}</pre></div>"
+        self.conversationView.moveCursor(QTextCursor.End)
+        # single break instead of two to reduce vertical spacing
+        self.conversationView.insertHtml(header_html + body_html + "<br>")
+
+    def _render_image_item(self, image_path: str) -> None:
+        base64_image = self.convert_image_to_base64(image_path)
+        self.conversationView.moveCursor(QTextCursor.End)
+        image_html = f"<img src='data:image/png;base64,{base64_image}' alt='Image' style='width:100px; height:auto;'>"
+        self.conversationView.insertHtml(image_html)
+        # single break instead of two to reduce vertical spacing
+        self.conversationView.insertHtml("<br>")
 
     def append_message_chunk(self, sender, message_chunk, is_start_of_message):
         with self._lock:
-            # Move cursor to the end for each insertion
-            self.conversationView.moveCursor(QTextCursor.End)
-            if is_start_of_message:  # If a new message, insert the assistant's name in bold and black
-                self.conversationView.insertHtml(f"<b style='color:black;'>{html.escape(sender)}:</b> ")
-        
-            escaped_text = html.escape(message_chunk)
-            formatted_text = f"<span class='text-block' style='white-space: pre-wrap;'>{escaped_text}</span>"
-            self.conversationView.insertHtml(formatted_text)
+            # New stream: drop any stale snapshot to prevent a later restore/flash.
+            if is_start_of_message:
+                self.stream_snapshot.pop(sender, None)
 
-            self.is_assistant_streaming[sender] = AssistantStreamingState.STREAMING
+            if is_start_of_message or self.is_assistant_streaming[sender] != AssistantStreamingState.STREAMING:
+                # Start header and create an empty streaming region we will update
+                self.conversationView.moveCursor(QTextCursor.End)
+                header_color = "#D3D3D3" if self.is_dark_mode() else "black"
+                header_html = f"<span class='sender' style='color:{header_color};'>{html.escape(sender)}:</span> "
+                cursor = self.conversationView.textCursor()
+                header_start = cursor.position()
+                self.conversationView.insertHtml(header_html)
+                # region starts after header
+                start_cursor = self.conversationView.textCursor()
+                start_pos = start_cursor.position()
+                # insert empty placeholder to establish an end pos
+                self.conversationView.insertHtml("")
+                end_pos = self.conversationView.textCursor().position()
+                self.stream_regions[sender] = {"header_start": header_start, "start": start_pos, "end": end_pos}
+                self.streaming_buffer[sender].clear()
+
+            # Append the new chunk and (re)render region
             self.streaming_buffer[sender].append(message_chunk)
-
+            self.is_assistant_streaming[sender] = AssistantStreamingState.STREAMING
+            self._update_stream_region(sender)
             self.scroll_to_bottom()
+
+    def _update_stream_region(self, sender: str) -> None:
+        region = self.stream_regions.get(sender)
+        if not region:
+            return
+        text = "".join(self.streaming_buffer[sender])
+        if self._markdown_enabled:
+            inner = self.render_markdown_to_html(text)
+        else:
+            inner = f"<pre>{html.escape(text)}</pre>"
+        body_html = f"<div class='md-root'>{inner}</div>"
+
+        cursor = QTextCursor(self.conversationView.document())
+        cursor.setPosition(region["start"])
+        cursor.setPosition(region["end"], QTextCursor.KeepAnchor)
+        cursor.insertHtml(body_html)
+        region["end"] = cursor.position()
+        self.stream_regions[sender] = region
 
     def clear_assistant_streaming(self, assistant_name):
         with self._lock:
             self.is_assistant_streaming[assistant_name] = AssistantStreamingState.NOT_STREAMING
             self.stream_snapshot[assistant_name] = ""
             self.streaming_buffer[assistant_name].clear()
+            self.stream_regions.pop(assistant_name, None)
 
     def is_any_assistant_streaming(self):
         with self._lock:
             return any(state == AssistantStreamingState.STREAMING for state in self.is_assistant_streaming.values())
 
     def restore_assistant_streaming(self):
-        for assistant_name in self.is_assistant_streaming.keys():
+        for assistant_name in list(self.is_assistant_streaming.keys()):
             if self.stream_snapshot[assistant_name]:
-                logger.info(f"Restoring streamed content for ASSISTANT: {assistant_name}")
-                logger.info(f"Restored stream snapshot: {self.stream_snapshot[assistant_name]}")
+                # Recreate header and region, then render snapshot
                 self.conversationView.moveCursor(QTextCursor.End)
-                self.conversationView.insertHtml(f"<b style='color:black;'>{html.escape(assistant_name)}:</b> ")
-                self.conversationView.insertHtml(self.stream_snapshot[assistant_name])
+                header_color = "#D3D3D3" if self.is_dark_mode() else "black"
+                header_html = f"<span class='sender' style='color:{header_color};'>{html.escape(assistant_name)}:</span> "
+                cursor = self.conversationView.textCursor()
+                header_start = cursor.position()
+                self.conversationView.insertHtml(header_html)
+                start_pos = self.conversationView.textCursor().position()
+                self.conversationView.insertHtml("")
+                end_pos = self.conversationView.textCursor().position()
+                self.stream_regions[assistant_name] = {"header_start": header_start, "start": start_pos, "end": end_pos}
+                self.streaming_buffer[assistant_name] = [self.stream_snapshot[assistant_name]]
+                self._update_stream_region(assistant_name)
                 del self.stream_snapshot[assistant_name]
                 self.is_assistant_streaming[assistant_name] = AssistantStreamingState.STREAMING
 
     def clear_and_save_assistant_streaming(self):
-        for assistant_name in self.is_assistant_streaming.keys():
-            if self.is_assistant_streaming[assistant_name] == AssistantStreamingState.STREAMING:
-                logger.info(f"Clearing and saving streamed content for ASSISTANT: {assistant_name}")
+        # Save and remove the currently streaming region from the view
+        for assistant_name, state in list(self.is_assistant_streaming.items()):
+            if state == AssistantStreamingState.STREAMING:
                 current_streamed_content = "".join(self.streaming_buffer[assistant_name])
                 self.stream_snapshot[assistant_name] = current_streamed_content
-                self.clear_selected_text_from_conversation(assistant_name=assistant_name, selected_text=current_streamed_content)
-                logger.info(f"Saved stream snapshot: {self.stream_snapshot[assistant_name]}")
+
+                region = self.stream_regions.get(assistant_name)
+                if region:
+                    cursor = QTextCursor(self.conversationView.document())
+                    cursor.setPosition(region["header_start"])
+                    cursor.setPosition(region["end"], QTextCursor.KeepAnchor)
+                    cursor.insertHtml("")  # remove header+streamed content
+                    self.stream_regions.pop(assistant_name, None)
+
                 self.streaming_buffer[assistant_name].clear()
+                # Mark NOT_STREAMING so we won't restore automatically after user messages.
+                self.is_assistant_streaming[assistant_name] = AssistantStreamingState.NOT_STREAMING
 
     def clear_selected_text_from_conversation(self, assistant_name, selected_text):
-        # Get the QTextEdit's current content
-        current_text = self.conversationView.toPlainText()
-        # Only proceed if the text ends with the selected_text
-        if current_text.endswith(selected_text):
-            # Create a QTextCursor associated with the QTextEdit
-            cursor = self.conversationView.textCursor()
-            # Calculate the position where selected_text starts, including the assistant's name and -2 for the colon and space
-            start_position = cursor.position() - len(selected_text) - len(assistant_name) - 2
-            # Select the text from start_position to the end of the document
-            cursor.setPosition(start_position, QTextCursor.MoveAnchor)
-            cursor.movePosition(QTextCursor.End, QTextCursor.KeepAnchor)
-            # Remove the selected text
-            cursor.removeSelectedText()
-            # Set the modified text cursor back to the QTextEdit
-            self.conversationView.setTextCursor(cursor)
-
-    def format_urls(self, text):
-        # Enhanced URL pattern that excludes punctuation at the end.
-        url_pattern = re.compile(
-            r'(\bhttps?://'               # Start with http:// or https://
-            r'[-A-Z0-9+&@#/%=~_|$?!:.,]*' # Followed by the domain part and allowable characters in a URL.
-            r'[-A-Z0-9+&@#/%=~_|$]'       # URL must finish with an allowable character to avoid punctuation at the end.
-            r')', re.IGNORECASE)           # Make the regex case-insensitive.
-        
-        # Function to add HTML anchor tag around URLs.
-        def replace_with_link(match):
-            url = match.group(0)
-            return f'<a href="{url}" style="color:blue; text-decoration: underline;">{url}</a>'
-
-        # Substitute URLs in the text with HTML anchor tags.
-        return url_pattern.sub(replace_with_link, text)
-
-    def format_links(self, text):
-        citation_to_filename = {}
-        citation_pattern = re.compile(r'\[(\d+)\]\s*(\S+)')  # e.g. [0] file.png
-        for index, filename in citation_pattern.findall(text):
-            citation_to_filename[index] = filename
-
-        link_pattern = re.compile(r'\[([^\]]+)\]\(([^\)]+)\)')
-
-        def replace_with_clickable_text(match):
-            link_text = match.group(1).strip()
-            link_target = match.group(2).strip()
-
-            # 1) Strip off leading/trailing quotes
-            link_target = link_target.strip('"').strip("'")
-
-            # 2) Split on the first space/quote so any trailing HTML attributes are discarded.
-            link_target = re.split(r'\s|["\']', link_target, maxsplit=1)[0]
-
-            # External URL check:
-            if link_target.startswith("http://") or link_target.startswith("https://"):
-                return (
-                    f'<a href="{link_target}" target="_blank" '
-                    f'style="color:blue; text-decoration: underline;">{link_text}</a>'
-                )
-
-            # Otherwise, treat it as a local file reference/citation:
-            index_match = re.match(r'^\[(\d+)\]$', link_target)
-            if index_match:
-                citation_index = index_match.group(1)
-                file_name = citation_to_filename.get(citation_index)
-            else:
-                # Remove any leading "sandbox:/mnt/data/" or just "sandbox:/"
-                # This covers both cases like:
-                #   sandbox:/mnt/data/generated_image_123.png
-                #   sandbox:/generated_image_123.png
-                file_name = re.sub(r'^sandbox:[/\\](?:mnt[/\\]data[/\\])?', '', link_target)
-
-            if file_name:
-                local_file_path = os.path.normpath(os.path.join(self.file_path, file_name))
-
-                # Use a link_text that is unique in self.text_to_url_map:
-                final_link_text = link_text
-                if final_link_text in self.text_to_url_map:
-                    final_link_text = f"{final_link_text} {len(self.text_to_url_map) + 1}"
-
-                self.text_to_url_map[final_link_text] = {"path": local_file_path}
-
-                # Render a simpler link with optional file path as a tooltip.
-                return (
-                    f'<a href="{local_file_path}" '
-                    f'style="color:green; text-decoration: underline;" '
-                    f'download="{file_name}" '
-                    f'title="{local_file_path}">'
-                    f'{final_link_text}'
-                    f'</a>'
-                )
-
-            # If we failed to find the file, just return the original match:
-            return match.group(0)
-
-        updated_text = link_pattern.sub(replace_with_clickable_text, text)
-
-        # Remove leftover [N] file references
-        updated_text = re.sub(
-            r'\[\d+\]\s*\S+\.(png|jpg|jpeg|gif|bmp)',
-            '',
-            updated_text,
-            flags=re.IGNORECASE
-        )
-
-        return updated_text
-
-    def parse_message(self, message):
-        """Parse the message into a list of (is_code, text) tuples."""
-        segments = []
-        # Split the message on code block delimiters
-        parts = message.split("```")
-
-        # Iterate over the parts and determine if they are code blocks
-        for i, part in enumerate(parts):
-            is_code = i % 2 != 0  # Code blocks are at odd indices
-            if is_code:
-                # Attempt to find a language identifier at the beginning of the code block
-                lines = part.split('\n', 1)
-                if len(lines) > 1:  # Check if there's more than one line
-                    language, code = lines
-                    language = language.strip()  # This is your language identifier, e.g., 'java'
-                    segments.append((is_code, code.strip('\n')))  # Append without the language line
-                else:
-                    # No language line present, just append the code
-                    segments.append((is_code, part.strip('\n')))
-            else:
-                segments.append((is_code, part))
-        return segments
+        # No longer used with region-based streaming; kept for compatibility.
+        pass
 
     def scroll_to_bottom(self):
         scrollbar = self.conversationView.verticalScrollBar()
         scrollbar.setValue(scrollbar.maximum())
         self.conversationView.update()
+
+    def get_markdown_enabled(self) -> bool:
+        return self._markdown_enabled
+
+    def set_markdown_enabled(self, enabled: bool) -> None:
+        if self._markdown_enabled == enabled:
+            return
+        with self._lock:
+            had_streaming = self.is_any_assistant_streaming()
+            if had_streaming:
+                self.clear_and_save_assistant_streaming()
+
+            self._markdown_enabled = enabled
+            self._build_markdown_converter()
+            self.apply_document_theme_styles()
+
+            # Only re-render if this thread currently has content in the view or history.
+            doc_has_content = bool(self.conversationView.document().toPlainText().strip())
+            if self._history or doc_has_content:
+                self._rerender_history()
+
+            if had_streaming:
+                self.restore_assistant_streaming()
+
+    def toggle_markdown_rendering(self) -> None:
+        self.set_markdown_enabled(not self._markdown_enabled)
+
+    def _rerender_history(self) -> None:
+        self.conversationView.clear()
+        for item in self._history:
+            self._render_item(item)
+        self.scroll_to_bottom()
+
+    def _render_item(self, item: dict) -> None:
+        kind = item.get("kind")
+        if kind == "text":
+            self._render_text_item(item["sender"], item["color"], item["content"])
+        elif kind == "image":
+            self._render_image_item(item["path"])

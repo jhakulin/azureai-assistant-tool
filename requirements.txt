@@ -10,5 +10,8 @@ azure-cognitiveservices-speech
 # Beautiful Soup
 beautifulsoup4
 
+# Markdown Parser
+Markdown>=3.6
+
 # Realtime Python Library
 https://github.com/jhakulin/realtime-ai/releases/download/v0.1.8/realtime_ai-0.1.8-py3-none-any.whl
