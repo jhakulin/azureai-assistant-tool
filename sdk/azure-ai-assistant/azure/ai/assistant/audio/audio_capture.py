@@ -4,20 +4,26 @@
 from azure.ai.assistant.management.logger_module import logger
 from azure.ai.assistant.management.exceptions import EngineError
 
-import sys
 import pyaudio
 import numpy as np
+import wave
+import threading
+import time
 from typing import Optional
 from abc import ABC, abstractmethod
+
 from .vad import VoiceActivityDetector, SileroVoiceActivityDetector
 from .azure_keyword_recognizer import AzureKeywordRecognizer
-import wave
 
 # Constants for PyAudio Configuration
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
 RATE = 24000  # Default sample rate
 FRAMES_PER_BUFFER = 1024
+
+# PortAudio callback flags (use getattr for safety across versions)
+PA_INPUT_UNDERFLOW = getattr(pyaudio, "paInputUnderflow", 0x01)
+PA_INPUT_OVERFLOW = getattr(pyaudio, "paInputOverflow", 0x02)
 
 
 class AudioCaptureEventHandler(ABC):
@@ -28,25 +34,17 @@ class AudioCaptureEventHandler(ABC):
 
     @abstractmethod
     def send_audio_data(self, audio_data: bytes):
-        """
-        Called to send audio data to the client.
-
-        :param audio_data: Raw audio data in bytes.
-        """
+        """Called to send audio data to the client."""
         pass
 
     @abstractmethod
     def on_speech_start(self):
-        """
-        Called when speech starts.
-        """
+        """Called when speech starts."""
         pass
 
     @abstractmethod
     def on_speech_end(self):
-        """
-        Called when speech ends.
-        """
+        """Called when speech ends."""
         pass
 
     @abstractmethod
@@ -98,13 +96,14 @@ class AudioCapture:
         self.cross_fade_duration_ms = cross_fade_duration_ms
         self.enable_wave_capture = enable_wave_capture
 
-        self.vad = None
+        self.vad: Optional[VoiceActivityDetector] = None
         self.speech_started = False
 
-        self.wave_file = None
+        self.wave_file: Optional[wave.Wave_write] = None
         self.pyaudio_instance = pyaudio.PyAudio()
-        self.stream = None
+        self.stream: Optional[pyaudio.Stream] = None
 
+        # Initialize VAD if parameters provided
         if vad_parameters is not None:
             try:
                 if "model_path" in vad_parameters and isinstance(vad_parameters["model_path"], str) and vad_parameters["model_path"].strip():
@@ -121,12 +120,13 @@ class AudioCapture:
                 logger.error(f"Failed to initialize VAD module: {e}")
                 self.vad = None
 
-        self.keyword_recognizer = None
+        # Initialize optional keyword recognizer
+        self.keyword_recognizer: Optional[AzureKeywordRecognizer] = None
         if keyword_model_file:
             try:
                 self.keyword_recognizer = AzureKeywordRecognizer(
                     model_file=keyword_model_file,
-                    callback=self._on_keyword_detected,
+                    callback=self._on_keyword_detected,  # internal handler
                     sample_rate=self.sample_rate,
                     channels=self.channels
                 )
@@ -137,6 +137,10 @@ class AudioCapture:
                 raise EngineError(error_message)
 
         self.is_running = False
+
+        # Callback overflow logging throttling
+        self._last_overflow_log = 0.0
+        self._overflow_count = 0
 
     def start(self):
         """
@@ -236,8 +240,21 @@ class AudioCapture:
         :param status: Status flags.
         :return: Tuple containing None and pyaudio.paContinue.
         """
+        # Fast-path for status flags to avoid work inside overflow/underflow
         if status:
-            logger.warning(f"Input Stream Status: {status}")
+            now = time.time()
+            is_overflow = bool(status & PA_INPUT_OVERFLOW) or status == 2
+            is_underflow = bool(status & PA_INPUT_UNDERFLOW)
+            if is_overflow:
+                self._overflow_count += 1
+                if now - self._last_overflow_log > 2.0:
+                    self._last_overflow_log = now
+                    logger.warning(f"PyAudio input overflow (count={self._overflow_count}); dropping frame.")
+                return (None, pyaudio.paContinue)
+            if is_underflow:
+                if now - self._last_overflow_log > 2.0:
+                    self._last_overflow_log = now
+                    logger.debug("PyAudio input underflow detected.")
 
         try:
             audio_data = np.frombuffer(indata, dtype=np.int16).copy()
@@ -245,6 +262,7 @@ class AudioCapture:
             logger.error(f"Error converting audio data: {e}")
             return (None, pyaudio.paContinue)
 
+        # No VAD: forward raw audio quickly
         if self.vad is None:
             self.event_handler.send_audio_data(indata)
             if self.enable_wave_capture and self.wave_file:
@@ -254,6 +272,7 @@ class AudioCapture:
                     logger.error(f"Error writing to wave file: {e}")
             return (None, pyaudio.paContinue)
 
+        # VAD path
         try:
             speech_detected, is_speech = self.vad.process_audio_chunk(audio_data)
             if self.keyword_recognizer and self.keyword_recognizer.is_started:
@@ -265,7 +284,7 @@ class AudioCapture:
         if speech_detected or self.speech_started:
             if is_speech:
                 if not self.speech_started:
-                    logger.info("Speech started")
+                    # First chunk: prepend buffer with cross-fade, then notify start
                     self.buffer_pointer = self._update_buffer(
                         audio_data, self.audio_buffer, self.buffer_pointer, self.buffer_size
                     )
@@ -273,27 +292,18 @@ class AudioCapture:
                         self.audio_buffer, self.buffer_pointer, self.buffer_size
                     ).copy()
 
-                    fade_length = min(
-                        self.cross_fade_samples, len(current_buffer), len(audio_data)
-                    )
+                    fade_length = min(self.cross_fade_samples, len(current_buffer), len(audio_data))
                     if fade_length > 0:
                         fade_out = np.linspace(1.0, 0.0, fade_length, dtype=np.float32)
                         fade_in = np.linspace(0.0, 1.0, fade_length, dtype=np.float32)
-
                         buffer_fade_section = current_buffer[-fade_length:].astype(np.float32)
                         audio_fade_section = audio_data[:fade_length].astype(np.float32)
-
-                        faded_buffer_section = buffer_fade_section * fade_out
-                        faded_audio_section = audio_fade_section * fade_in
-
-                        current_buffer[-fade_length:] = np.round(faded_buffer_section).astype(np.int16)
-                        audio_data[:fade_length] = np.round(faded_audio_section).astype(np.int16)
-
+                        current_buffer[-fade_length:] = np.round(buffer_fade_section * fade_out).astype(np.int16)
+                        audio_data[:fade_length] = np.round(audio_fade_section * fade_in).astype(np.int16)
                         combined_audio = np.concatenate((current_buffer, audio_data))
                     else:
                         combined_audio = audio_data
 
-                    logger.info("Sending buffered audio to client via event handler...")
                     self.event_handler.on_speech_start()
                     self.event_handler.send_audio_data(combined_audio.tobytes())
                     if self.enable_wave_capture and self.wave_file:
@@ -310,10 +320,10 @@ class AudioCapture:
                             logger.error(f"Error writing to wave file: {e}")
                 self.speech_started = True
             else:
-                logger.info("Speech ended")
                 self.event_handler.on_speech_end()
                 self.speech_started = False
 
+        # Update rolling buffer
         if self.vad:
             self.buffer_pointer = self._update_buffer(
                 audio_data, self.audio_buffer, self.buffer_pointer, self.buffer_size
@@ -363,19 +373,21 @@ class AudioCapture:
     def _on_keyword_detected(self, result):
         """
         Internal callback when a keyword is detected.
+        Offload event notification to avoid stopping/starting from recognizer thread.
         """
         logger.info("Keyword detected")
-        if self.keyword_recognizer:
+
+        def _notify():
             try:
                 self.event_handler.on_keyword_detected(result)
                 logger.debug("Keyword recognizer restarted after detection.")
             except Exception as e:
                 logger.error(f"Error handling keyword detection: {e}")
 
+        threading.Thread(target=_notify, name="KeywordDetectedNotify", daemon=True).start()
+
     def start_keyword_recognition(self):
-        """
-        Starts the keyword recognition process.
-        """
+        """Starts the keyword recognition process."""
         if self.keyword_recognizer and not self.keyword_recognizer.is_started:
             try:
                 self.keyword_recognizer.start_recognition()
@@ -384,9 +396,7 @@ class AudioCapture:
                 logger.error(f"Failed to start AzureKeywordRecognizer: {e}")
 
     def stop_keyword_recognition(self):
-        """
-        Stops the keyword recognition process.
-        """
+        """Stops the keyword recognition process."""
         if self.keyword_recognizer and self.keyword_recognizer.is_started:
             try:
                 self.keyword_recognizer.stop_recognition()
@@ -395,8 +405,6 @@ class AudioCapture:
                 logger.error(f"Error stopping AzureKeywordRecognizer: {e}")
 
     def close(self):
-        """
-        Closes the audio capture stream and the wave file, releasing all resources.
-        """
+        """Closes audio capture and releases resources."""
         self.stop(terminate=True)
         logger.info("AudioCapture resources have been released.")

@@ -12,6 +12,20 @@ from azure.ai.assistant.audio.audio_playback import AudioPlayer
 
 from enum import auto, Enum
 import threading
+import time
+import queue
+import os
+from typing import Optional
+
+# Optional: best-effort warm-up for PortAudio on first run to avoid device-open hangs
+try:
+    import pyaudio as _pyaudio  # type: ignore
+except Exception:
+    _pyaudio = None
+
+# Queue/overflow tuning (can be overridden via env vars)
+QUEUE_MAX_CHUNKS = int(os.getenv("AZAI_AUDIO_SEND_QUEUE_MAX", "64"))
+OVERFLOW_LOG_SECONDS = float(os.getenv("AZAI_AUDIO_SEND_OVERFLOW_LOG_SEC", "5.0"))
 
 
 class ConversationState(Enum):
@@ -31,21 +45,102 @@ class RealtimeAudioCaptureEventHandler(AudioCaptureEventHandler):
         self._client = realtime_client
         self._audio_player = audio_player
         self._state = ConversationState.IDLE
-        self._silence_timer = None
-        self._audio_capture = None
+        self._silence_timer: Optional[threading.Timer] = None
+        self._audio_capture: Optional[AudioCapture] = None
+
+        # Non-blocking send pipeline to keep PyAudio callback fast
+        self._send_q: "queue.Queue[bytes]" = queue.Queue(maxsize=QUEUE_MAX_CHUNKS)
+        self._sender_stop = threading.Event()
+        self._sender_thread: Optional[threading.Thread] = None
+        # Overflow metrics
+        self._overflow_total = 0
+        self._overflow_window = 0
+        self._overflow_last_log = time.time()
 
     def set_capture_client(self, audio_capture: AudioCapture):
         self._audio_capture = audio_capture
 
+    # -------- async audio sending --------
+    def _start_sender(self):
+        if self._sender_thread and self._sender_thread.is_alive():
+            return
+        self._sender_stop.clear()
+        self._sender_thread = threading.Thread(target=self._sender_loop, name="RT-AudioSender", daemon=True)
+        self._sender_thread.start()
+
+    def _stop_sender(self):
+        self._sender_stop.set()
+        try:
+            self._send_q.put_nowait(b"")  # unblock
+        except Exception:
+            pass
+        if self._sender_thread and self._sender_thread.is_alive():
+            self._sender_thread.join(timeout=2.0)
+        self._sender_thread = None
+        # Log summary if any drops happened
+        if self._overflow_total:
+            logger.warning(
+                f"Audio send queue overflowed {self._overflow_total} times this session "
+                f"(maxsize={QUEUE_MAX_CHUNKS}). Consider increasing AZAI_AUDIO_SEND_QUEUE_MAX, "
+                f"reducing frames_per_buffer, or improving network throughput."
+            )
+
+    def _sender_loop(self):
+        while not self._sender_stop.is_set():
+            try:
+                chunk = self._send_q.get(timeout=0.25)
+            except queue.Empty:
+                continue
+            if self._sender_stop.is_set() or not chunk:
+                continue
+            try:
+                self._client._realtime_client.send_audio(chunk)
+            except Exception as e:
+                # Drop on error to keep loop alive
+                logger.debug(f"send_audio failed (dropped): {e}")
+
+    def _note_overflow(self):
+        self._overflow_total += 1
+        self._overflow_window += 1
+        now = time.time()
+        if (now - self._overflow_last_log) >= OVERFLOW_LOG_SECONDS:
+            try:
+                qsize = self._send_q.qsize()
+            except Exception:
+                qsize = -1
+            logger.warning(
+                f"Audio send queue overflow x{self._overflow_window} in last "
+                f"{OVERFLOW_LOG_SECONDS:.1f}s (current size={qsize}/{QUEUE_MAX_CHUNKS}). "
+                f"Dropping oldest chunks to keep latency bounded."
+            )
+            self._overflow_window = 0
+            self._overflow_last_log = now
+
     def send_audio_data(self, audio_data: bytes):
         """
-        Sends audio data to the RealtimeClient.
-
-        :param audio_data: Raw audio data in bytes.
+        Enqueue audio for async send. Never block the audio callback thread.
         """
-        if self._state == ConversationState.CONVERSATION_ACTIVE:
-            logger.debug("Sending audio data to the client.")
-            self._client._realtime_client.send_audio(audio_data)
+        if self._state != ConversationState.CONVERSATION_ACTIVE:
+            return
+        try:
+            self._send_q.put_nowait(audio_data)
+        except queue.Full:
+            self._note_overflow()
+            # Drop oldest to keep latency bounded
+            try:
+                _ = self._send_q.get_nowait()
+            except Exception:
+                pass
+            try:
+                self._send_q.put_nowait(audio_data)
+            except Exception:
+                self._note_overflow()
+                pass
+
+    # -------- event handlers --------
+    def _offload(self, fn, *args, **kwargs):
+        t = threading.Thread(target=lambda: fn(*args, **kwargs), name="RT-HandlerOffload", daemon=True)
+        t.start()
 
     def on_speech_start(self):
         """
@@ -54,17 +149,24 @@ class RealtimeAudioCaptureEventHandler(AudioCaptureEventHandler):
         logger.info("Local VAD: User speech started")
         logger.info(f"on_speech_start: Current state: {self._state}")
 
-        if self._state == ConversationState.KEYWORD_DETECTED or self._state == ConversationState.CONVERSATION_ACTIVE:
+        if self._state in (ConversationState.KEYWORD_DETECTED, ConversationState.CONVERSATION_ACTIVE):
             self._set_state(ConversationState.CONVERSATION_ACTIVE)
             self._cancel_silence_timer()
 
         if (self._client._realtime_client.options.turn_detection is None and
             self._audio_player.is_audio_playing() and
             self._state == ConversationState.CONVERSATION_ACTIVE):
+            # Offload interruption to avoid blocking the capture thread
+            self._offload(self._interrupt_assistant)
+
+    def _interrupt_assistant(self):
+        try:
             logger.info("User started speaking while assistant is responding; interrupting the assistant's response.")
             self._client._realtime_client.clear_input_audio_buffer()
             self._client._realtime_client.cancel_response()
             self._audio_player.drain_and_restart()
+        except Exception as e:
+            logger.debug(f"Interrupt assistant failed: {e}")
 
     def on_speech_end(self):
         """
@@ -75,7 +177,7 @@ class RealtimeAudioCaptureEventHandler(AudioCaptureEventHandler):
 
         if self._state == ConversationState.CONVERSATION_ACTIVE and self._client._realtime_client.options.turn_detection is None:
             logger.debug("Using local VAD; requesting the client to generate a response after speech ends.")
-            self._client._realtime_client.generate_response()
+            self._offload(self._client._realtime_client.generate_response)
             logger.debug("Conversation is active. Starting silence timer.")
             self._start_silence_timer()
 
@@ -92,7 +194,12 @@ class RealtimeAudioCaptureEventHandler(AudioCaptureEventHandler):
 
     def _start_silence_timer(self):
         self._cancel_silence_timer()
-        self._silence_timer = threading.Timer(self._client.assistant_config.realtime_config.keyword_rearm_silence_timeout, self._reset_state_due_to_silence)
+        self._silence_timer = threading.Timer(
+            self._client.assistant_config.realtime_config.keyword_rearm_silence_timeout,
+            self._reset_state_due_to_silence
+        )
+        # Make timer a daemon so it never blocks app shutdown
+        self._silence_timer.daemon = True
         self._silence_timer.start()
 
     def _cancel_silence_timer(self):
@@ -119,16 +226,16 @@ class RealtimeAudioCaptureEventHandler(AudioCaptureEventHandler):
             self._cancel_silence_timer()
 
     def _on_keyword_armed(self, armed: bool):
-        logger.info(f"Keyword detection armed: {armed}")
+        logger.info(f"Keyword detection armed: {armed} (thread={threading.current_thread().name})")
         if armed is False:
             if self._audio_capture:
-                self._audio_capture.stop_keyword_recognition()
+                self._offload(self._audio_capture.stop_keyword_recognition)
         else:
             if self._audio_capture:
-                self._audio_capture.start_keyword_recognition()
+                self._offload(self._audio_capture.start_keyword_recognition)
 
         if self._client and self._client.event_handler:
-            self._client.event_handler.on_keyword_armed(armed)
+            self._offload(self._client.event_handler.on_keyword_armed, armed)
 
 
 class RealtimeAudio:
@@ -144,11 +251,13 @@ class RealtimeAudio:
         :type realtime_client: RealtimeAssistantClient
 
         """
-        self._audio_player = None
-        self._audio_capture = None
-        self._audio_capture_event_handler = None
+        self._audio_player: Optional[AudioPlayer] = None
+        self._audio_capture: Optional[AudioCapture] = None
+        self._audio_capture_event_handler: Optional[RealtimeAudioCaptureEventHandler] = None
 
         self._init_realtime_audio(realtime_client)
+        # Guard to run device warm-up only once per process
+        self._audio_warmed_up = False
 
     def _init_realtime_audio(
             self,
@@ -310,6 +419,20 @@ class RealtimeAudio:
         try:
             if self._audio_player:
                 self._audio_player.start()
+
+            # Warm up default input device once to avoid first-open hangs on some drivers
+            if not self._audio_warmed_up:
+                self._warm_up_input_device(preferred_rates=[24000, 48000, 44100], duration_sec=0.15)
+                self._audio_warmed_up = True
+
+            # Start async sender before capture
+            if self._audio_capture_event_handler:
+                self._audio_capture_event_handler._start_sender()
+                logger.debug(
+                    f"Realtime audio sender queue maxsize={QUEUE_MAX_CHUNKS}, "
+                    f"overflow log interval={OVERFLOW_LOG_SECONDS}s"
+                )
+
             if self._audio_capture:
                 self._audio_capture.start()
         except Exception as e:
@@ -329,9 +452,56 @@ class RealtimeAudio:
                 self._audio_capture_event_handler._set_state(ConversationState.IDLE)
             if self._audio_player:
                 self._audio_player.stop()
+            if self._audio_capture_event_handler:
+                self._audio_capture_event_handler._stop_sender()
         except Exception as e:
             logger.error(f"Failed to stop audio: {e}")
             raise EngineError(f"Failed to stop audio: {e}")
+
+    def _warm_up_input_device(self, preferred_rates: list[int], duration_sec: float = 0.15) -> None:
+        """
+        Best-effort warm-up for PortAudio. Briefly opens the default input device at a common
+        sample rate to avoid a first-use device-open stall seen on some Windows systems.
+        """
+        if _pyaudio is None:
+            logger.debug("PyAudio not available for warm-up; skipping.")
+            return
+        pa = None
+        try:
+            pa = _pyaudio.PyAudio()
+            try:
+                dev = pa.get_default_input_device_info()
+                dev_index = int(dev["index"]) if dev and "index" in dev else None
+            except Exception:
+                dev_index = None
+
+            for rate in preferred_rates or [48000, 44100]:
+                try:
+                    stream = pa.open(
+                        format=_pyaudio.paInt16,
+                        channels=1,
+                        rate=rate,
+                        input=True,
+                        frames_per_buffer=1024,
+                        input_device_index=dev_index,
+                        start=True,
+                    )
+                    time.sleep(duration_sec)
+                    stream.stop_stream()
+                    stream.close()
+                    logger.debug(f"Audio input warm-up succeeded at {rate} Hz.")
+                    break
+                except Exception as e:
+                    logger.debug(f"Warm-up attempt at {rate} Hz failed: {e}")
+                    continue
+        except Exception as e:
+            logger.debug(f"Audio input warm-up skipped due to error: {e}")
+        finally:
+            try:
+                if pa:
+                    pa.terminate()
+            except Exception:
+                pass
 
     @property
     def audio_capture(self) -> AudioCapture:

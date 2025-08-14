@@ -416,9 +416,33 @@ class ConversationView(QWidget):
         )
 
     def render_markdown_to_html(self, text: str) -> str:
+        text = self._normalize_markdown_lists(text)
         self._md.reset()
         html_out = self._md.convert(text or "")
         return self._post_process_links_and_images(html_out)
+
+    def _normalize_markdown_lists(self, text: str) -> str:
+        if not text:
+            return text
+        # Normalize newlines
+        text = text.replace("\r\n", "\n").replace("\r", "\n")
+
+        # Ensure a blank line before any top-level list (ordered or unordered) if preceded by text
+        text = re.sub(r'([^\n])\n(- |\d+\.)', r'\1\n\n\2', text)
+
+        # Expand 2‑space indents before "-" to 4 spaces for nested lists (sane_lists prefers 4)
+        text = re.sub(r'(?m)^( {2})(- )', r'    \2', text)
+
+        # Likewise for numbered nested items written with 2 spaces
+        text = re.sub(r'(?m)^( {2})(\d+\.) ', r'    \2 ', text)
+
+        # Remove accidental double spaces after dash
+        text = re.sub(r'(?m)^(-)  ([^\s])', r'\1 \2', text)
+
+        # Guarantee a trailing newline so final list renders completely
+        if not text.endswith("\n"):
+            text += "\n"
+        return text
 
     def _post_process_links_and_images(self, html_in: str) -> str:
         try:
