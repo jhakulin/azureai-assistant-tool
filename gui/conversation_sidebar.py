@@ -784,12 +784,25 @@ class ConversationSidebar(QWidget):
                 return False
             
             # Sanitize the name (remove any problematic characters)
-            invalid_chars = ['/', '\\', ':', '*', '?', '"', '<', '>', '|']
+            invalid_chars = ['"', '\\']  # Only escape characters that break JSON
             for char in invalid_chars:
                 if char in new_name:
                     logger.warning(f"Thread name contains invalid character: {char}")
                     return False
+
+            # Additional validation for edge cases
+            if new_name.startswith(' ') or new_name.endswith(' '):
+                # Trim whitespace automatically instead of rejecting
+                new_name = new_name.strip()
+                if not new_name:
+                    logger.warning("Thread name cannot be only whitespace")
+                    return False
             
+            # Length validation (reasonable limit for UI display)
+            if len(new_name) > 255:
+                logger.warning("Thread name is too long (max 255 characters)")
+                return False
+
             # Get the thread client
             threads_client = ConversationThreadClient.get_instance(self._ai_client_type)
             
