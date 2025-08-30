@@ -303,12 +303,17 @@ class ConversationView(QWidget):
         dark = self.is_dark_mode()
         text_fg        = "#dcdcdc" if dark else "#24292e"
         link_fg        = "#4ea1ff" if dark else "#0066cc"
-        code_bg        = "#1e1e1e" if dark else "#f6f8fa"
-        code_border    = "#3c3c3c" if dark else "#d0d7de"
+        code_bg        = "#2d2d30" if dark else "#f6f8fa"  # Darker background for dark mode
+        code_border    = "#464647" if dark else "#d0d7de"  # More prominent border
+        code_fg        = "#ce9178" if dark else "#032f62"  # Distinct text color for code
         subtle_border  = "#2a2a2a" if dark else "#e6e6e6"
         tbl_header_bg  = "#2a2a2a" if dark else "#f2f2f2"
         quote_bg       = "#252525" if dark else "#f8f9fb"
         quote_border   = "#3c3c3c" if dark else "#d0d7de"
+        
+        # Additional colors for code syntax
+        inline_code_bg = "#3c3c3c" if dark else "#eff1f3"  # Slightly different bg for inline code
+        code_block_shadow = "rgba(0,0,0,0.3)" if dark else "rgba(0,0,0,0.1)"
 
         css = f"""
         /* Scope all markdown output inside .md-root to stabilize font metrics */
@@ -348,27 +353,69 @@ class ConversationView(QWidget):
         .md-root p {{ margin: 0.3em 0; }}
         .md-root ul, .md-root ol {{ margin: 0.3em 0 0.3em 1.2em; }}
 
-        /* code blocks */
+        /* Enhanced code blocks with better visibility */
         .md-root pre {{
             background   : {code_bg};
-            border       : 1px solid {code_border};
-            border-radius: 6px;
-            padding      : 8px 10px;
+            border       : 2px solid {code_border};  /* Thicker border */
+            border-radius: 8px;  /* More rounded corners */
+            padding      : 12px 16px;  /* More padding */
             white-space  : pre;
-            font-family  : Consolas, "Courier New", monospace;
-            margin       : 0.35em 0;   /* tighter */
-            font-size    : 0.94em;
+            font-family  : 'Cascadia Code', 'Consolas', 'Courier New', monospace;
+            margin       : 0.5em 0;   /* More margin for separation */
+            font-size    : 0.95em;  /* Slightly larger font */
             overflow-x   : auto;
+            box-shadow   : 0 2px 4px {code_block_shadow};  /* Subtle shadow for depth */
+            color        : {code_fg};  /* Distinct code color */
+            line-height  : 1.6;  /* Better line spacing for readability */
+        }}
+        
+        /* Add a subtle left border accent for code blocks */
+        .md-root pre {{
+            border-left: 4px solid {"#4ea1ff" if dark else "#0066cc"};
         }}
 
-        /* inline code */
+        /* Enhanced inline code */
         .md-root code {{
-            background   : {code_bg};
+            background   : {inline_code_bg};
             border       : 1px solid {code_border};
             border-radius: 4px;
-            padding      : 0 3px;
-            font-family  : Consolas, "Courier New", monospace;
-            font-size    : 0.95em;
+            padding      : 2px 6px;  /* More horizontal padding */
+            font-family  : 'Cascadia Code', 'Consolas', 'Courier New', monospace;
+            font-size    : 0.92em;
+            color        : {code_fg};
+            font-weight  : 500;  /* Slightly bolder */
+            white-space  : nowrap;  /* Prevent wrapping in inline code */
+        }}
+        
+        /* Remove double styling when code is inside pre */
+        .md-root pre code {{
+            background   : transparent;
+            border       : none;
+            padding      : 0;
+            font-size    : 1em;  /* Reset to parent size */
+            font-weight  : normal;
+            white-space  : pre;  /* Allow wrapping in code blocks */
+        }}
+        
+        /* Syntax highlighted code blocks from codehilite */
+        .md-root .codehilite {{
+            background   : {code_bg};
+            border       : 2px solid {code_border};
+            border-left  : 4px solid {"#4ea1ff" if dark else "#0066cc"};
+            border-radius: 8px;
+            padding      : 12px 16px;
+            margin       : 0.5em 0;
+            overflow-x   : auto;
+            box-shadow   : 0 2px 4px {code_block_shadow};
+        }}
+        
+        .md-root .codehilite pre {{
+            background   : transparent;
+            border       : none;
+            padding      : 0;
+            margin       : 0;
+            box-shadow   : none;
+            border-left  : none;
         }}
 
         /* tables */
@@ -395,7 +442,8 @@ class ConversationView(QWidget):
 
     def _build_markdown_converter(self) -> None:
         dark = self.is_dark_mode()
-        style_name = "native" if dark else "default"
+        # Use more contrasting syntax highlighting styles
+        style_name = "monokai" if dark else "friendly"  # Changed from native/default
         self._md = markdown.Markdown(
             extensions=[
                 "extra",          # fenced_code, tables, etc.
@@ -406,7 +454,7 @@ class ConversationView(QWidget):
             ],
             extension_configs={
                 "codehilite": {
-                    "guess_lang":     False,
+                    "guess_lang":     True,  # Changed to True for better syntax detection
                     "pygments_style": style_name,
                     "linenums":       False,
                     "noclasses":      True   # inline styles so Qt renders nicely

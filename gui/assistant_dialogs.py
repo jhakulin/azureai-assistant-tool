@@ -1273,9 +1273,10 @@ class AssistantConfigDialog(QDialog):
         self.pre_select_functions()
 
         # Pre-fill reference files
-        self.fileReferenceList.clear()
-        for file_path in self.assistant_config.file_references:
-            self.fileReferenceList.addItem(file_path)
+        if hasattr(self, 'fileReferenceList'):
+            self.fileReferenceList.clear()
+            for file_path in self.assistant_config.file_references:
+                self.fileReferenceList.addItem(file_path)
 
         # Tool resources / code interpreter / file search
         if self.assistant_config.tool_resources:

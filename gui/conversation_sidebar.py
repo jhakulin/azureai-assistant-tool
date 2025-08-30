@@ -8,7 +8,16 @@ import uuid
 import os
 import time
 
-from PySide6.QtWidgets import QWidget, QCheckBox, QLabel, QComboBox, QListWidgetItem, QFileDialog, QVBoxLayout, QSizePolicy, QHBoxLayout, QPushButton, QListWidget, QMessageBox, QMenu, QAbstractItemView
+from PySide6.QtWidgets import (
+    QWidget, QDialog,
+    QVBoxLayout, QHBoxLayout,
+    QCheckBox, QLineEdit, QComboBox,
+    QLabel, QListWidget, QListWidgetItem,
+    QPushButton, QDialogButtonBox,
+    QMenu,
+    QFileDialog, QMessageBox,
+    QSizePolicy, QAbstractItemView
+)
 from PySide6.QtCore import Qt, Signal, QThreadPool
 from PySide6.QtGui import QFont, QIcon, QAction
 
@@ -47,6 +56,38 @@ class AssistantItemWidget(QWidget):
         self.checked_changed.emit(self.name, is_checked)
 
 
+class RenameDialog(QDialog):
+    
+    def __init__(self, current_name, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Rename Thread")
+        self.setModal(True)
+        self.setFixedWidth(400)
+        
+        layout = QVBoxLayout(self)
+        
+        # Label
+        label = QLabel("Enter new name for the thread:")
+        layout.addWidget(label)
+        
+        # Input field
+        self.name_input = QLineEdit(current_name)
+        self.name_input.selectAll()
+        layout.addWidget(self.name_input)
+        
+        # Buttons
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel,
+            parent=self
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+    
+    def get_new_name(self):
+        return self.name_input.text().strip()
+
+
 class CustomListWidget(QListWidget):
 
     def __init__(self, parent=None):
@@ -60,11 +101,19 @@ class CustomListWidget(QListWidget):
 
     def contextMenuEvent(self, event):
         context_menu = QMenu(self)
+        current_item = self.currentItem()
+        
+        # Add rename action at the top if an item is selected
+        if current_item:
+            rename_action = context_menu.addAction("Rename Thread")
+            rename_action.triggered.connect(lambda: self.rename_item(current_item))
+            context_menu.addSeparator()
+        
+        # Keep all existing file attachment actions
         attach_file_search_action = context_menu.addAction("Attach File for File Search")
         attach_file_code_action = context_menu.addAction("Attach File for Code Interpreter")
         attach_image_action = context_menu.addAction("Attach Image File")
 
-        current_item = self.currentItem()
         remove_file_menu = None
 
         if current_item:
@@ -85,15 +134,46 @@ class CustomListWidget(QListWidget):
 
         selected_action = context_menu.exec_(self.mapToGlobal(event.pos()))
 
-        if selected_action == attach_file_search_action:
-            self.attach_file_to_selected_item("file_search")
-        elif selected_action == attach_file_code_action:
-            self.attach_file_to_selected_item("code_interpreter")
-        elif selected_action == attach_image_action:
-            self.attach_file_to_selected_item(None, is_image=True)
-        elif remove_file_menu and isinstance(selected_action, QAction) and selected_action.parent() == remove_file_menu:
-            file_info = selected_action.data()
-            self.remove_specific_file_from_selected_item(file_info, current_item)
+        if selected_action:
+            if selected_action == attach_file_search_action:
+                self.attach_file_to_selected_item("file_search")
+            elif selected_action == attach_file_code_action:
+                self.attach_file_to_selected_item("code_interpreter")
+            elif selected_action == attach_image_action:
+                self.attach_file_to_selected_item(None, is_image=True)
+            elif remove_file_menu and isinstance(selected_action, QAction) and selected_action.parent() == remove_file_menu:
+                file_info = selected_action.data()
+                self.remove_specific_file_from_selected_item(file_info, current_item)
+
+    def rename_item(self, item):
+        if not item:
+            return
+        
+        current_name = item.text()
+        dialog = RenameDialog(current_name, self)
+        
+        if dialog.exec() == QDialog.Accepted:
+            new_name = dialog.get_new_name()
+            
+            if new_name and new_name != current_name:
+                # Find the parent sidebar widget
+                parent = self.parent()
+                while parent and not hasattr(parent, 'update_thread_name'):
+                    parent = parent.parent()
+                
+                if parent and hasattr(parent, 'update_thread_name'):
+                    success = parent.update_thread_name(current_name, new_name)
+                    if success:
+                        item.setText(new_name)
+                        logger.info(f"Thread renamed from '{current_name}' to '{new_name}'")
+                    else:
+                        QMessageBox.warning(
+                            self,
+                            "Rename Failed",
+                            f"Could not rename thread. The name '{new_name}' may already exist or be invalid."
+                        )
+                else:
+                    logger.error("Could not find parent with update_thread_name method")
 
     def attach_file_to_selected_item(self, mode, is_image=False):
         """Attaches a file to the selected item with a specified mode indicating its intended use."""
@@ -203,6 +283,12 @@ class CustomListWidget(QListWidget):
         self.itemIdToFileMap[item_id] = attachments[:]
 
     def keyPressEvent(self, event):
+        if event.key() == Qt.Key_F2:
+            # F2 to rename selected item
+            current = self.currentItem()
+            if current:
+                self.rename_item(current)
+                return
         super().keyPressEvent(event)
 
     def delete_selected_item(self, item):
@@ -689,3 +775,46 @@ class ConversationSidebar(QWidget):
 
         # Execute the worker in a separate thread via QThreadPool
         QThreadPool.globalInstance().start(worker)
+
+    def update_thread_name(self, old_name: str, new_name: str) -> bool:
+        try:
+            # Validate new name
+            if not new_name or new_name.isspace():
+                logger.warning("Thread name cannot be empty")
+                return False
+            
+            # Sanitize the name (remove any problematic characters)
+            invalid_chars = ['/', '\\', ':', '*', '?', '"', '<', '>', '|']
+            for char in invalid_chars:
+                if char in new_name:
+                    logger.warning(f"Thread name contains invalid character: {char}")
+                    return False
+            
+            # Get the thread client
+            threads_client = ConversationThreadClient.get_instance(self._ai_client_type)
+            
+            # Check if old thread exists
+            all_threads = threads_client.get_conversation_threads()
+            old_thread = next((t for t in all_threads if t['thread_name'] == old_name), None)
+            if not old_thread:
+                logger.error(f"Thread '{old_name}' not found")
+                return False
+            
+            # Check if new name would be unique (excluding current thread)
+            existing_names = [t['thread_name'] for t in all_threads if t['thread_name'] != old_name]
+            if new_name in existing_names:
+                logger.warning(f"Thread name '{new_name}' already exists")
+                return False
+            
+            # Update the thread name using the client
+            updated_name = threads_client.set_conversation_thread_name(new_name, old_name)
+            
+            # Save the configuration
+            threads_client.save_conversation_threads()
+            
+            logger.info(f"Successfully renamed thread from '{old_name}' to '{updated_name}'")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to rename thread from '{old_name}' to '{new_name}': {e}")
+            return False
