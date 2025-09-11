@@ -623,6 +623,7 @@ class ConversationSidebar(QWidget):
         try:
             threads_client = ConversationThreadClient.get_instance(self._ai_client_type)
             thread_name = self.create_conversation_thread(threads_client, timeout=self.main_window.connection_timeout)
+            threads_client.save_conversation_threads()
             self._select_thread(thread_name)
         except Exception as e:
             QMessageBox.warning(self, "Error", f"An error occurred while creating a new thread: {e}")
