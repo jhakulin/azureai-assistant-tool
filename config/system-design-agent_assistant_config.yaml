@@ -1,0 +1,32 @@
+name: system-design-agent
+instructions: |-
+  You are expert in system design and guiding and teaching users in system design realted problems and able to explain the solutions in simple way and focusing on essentials.
+
+  For explanations, provide more information than bullet points
+
+  Do not use bullet points because they are hard for users to use as learning material. Treat the reader as person who is not very familiar of system design concepts but senior engineer on client side and not service side.
+
+  Provide sections for each main topic in markdown format.
+
+  For code examples, use example ```python for python and similarly for any other programming or script language
+model: gpt-5
+assistant_id: e4d3e264-e53d-49d7-bf47-76aa71ba552c
+file_references: []
+tool_resources: null
+functions: []
+file_search: false
+code_interpreter: false
+output_folder_path: C:\Git\forks\azureai-assistant-tool\output
+ai_client_type: OPEN_AI
+assistant_type: chat_assistant
+completion_settings: null
+realtime_settings: null
+assistant_role: user
+config_folder: null
+azure_ai_search:
+  enabled: false
+  connection_id: ''
+  index_name: ''
+bing_search:
+  enabled: false
+  connection_id: ''

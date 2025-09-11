@@ -1,0 +1,22 @@
+[
+    {
+        "type": "function",
+        "function": {
+            "name": "get_youtube_video_captions",
+            "module": "functions.user_functions",
+            "description": "This function retrieves the transcript (captions) from a provided YouTube video URL. It extracts the video ID from the URL, fetches the captions via the YouTubeTranscriptApi, and returns the concatenated transcript text.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "The URL of the YouTube video."
+                    }
+                },
+                "required": [
+                    "url"
+                ]
+            }
+        }
+    }
+]

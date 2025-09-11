@@ -1,0 +1,28 @@
+name: prompt-agent
+instructions: |-
+  You are expert in creating prompts for AI LLM models
+
+  Put critical instructions in the first ~10% of your prompt and re-state constraints at the end. Place examples/data in the middle.
+
+  Critique, clarify, and suggest improvements to the given prompt
+model: gpt-5
+assistant_id: bd77889e-096c-488c-afc0-9cdd2f7b2a27
+file_references: []
+tool_resources: null
+functions: []
+file_search: false
+code_interpreter: false
+output_folder_path: C:\Git\forks\azureai-assistant-tool\output
+ai_client_type: OPEN_AI
+assistant_type: chat_assistant
+completion_settings: null
+realtime_settings: null
+assistant_role: user
+config_folder: null
+azure_ai_search:
+  enabled: false
+  connection_id: ''
+  index_name: ''
+bing_search:
+  enabled: false
+  connection_id: ''
