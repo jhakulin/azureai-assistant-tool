@@ -303,36 +303,54 @@ class ConversationView(QWidget):
         dark = self.is_dark_mode()
         text_fg        = "#dcdcdc" if dark else "#24292e"
         link_fg        = "#4ea1ff" if dark else "#0066cc"
-        code_bg        = "#2d2d30" if dark else "#f6f8fa"  # Darker background for dark mode
-        code_border    = "#464647" if dark else "#d0d7de"  # More prominent border
-        code_fg        = "#ce9178" if dark else "#032f62"  # Distinct text color for code
+        code_bg        = "#2d2d30" if dark else "#f6f8fa"
+        code_border    = "#464647" if dark else "#d0d7de"
+        code_fg        = "#ce9178" if dark else "#032f62"
         subtle_border  = "#2a2a2a" if dark else "#e6e6e6"
         tbl_header_bg  = "#2a2a2a" if dark else "#f2f2f2"
         quote_bg       = "#252525" if dark else "#f8f9fb"
         quote_border   = "#3c3c3c" if dark else "#d0d7de"
-        
-        # Additional colors for code syntax
-        inline_code_bg = "#3c3c3c" if dark else "#eff1f3"  # Slightly different bg for inline code
+
+        inline_code_bg = "#3c3c3c" if dark else "#eff1f3"
         code_block_shadow = "rgba(0,0,0,0.3)" if dark else "rgba(0,0,0,0.1)"
 
         css = f"""
+        /* message wrapper for spacing */
+        .message {{
+            margin-bottom: 12px;
+        }}
+
+        /* header: name + optional meta (no avatar) */
+        .msg-header {{
+            display: block;
+            margin-bottom: 6px;
+        }}
+
+        /* sender label */
+        .sender {{
+            display: inline-block;
+            font-weight: 700;
+            font-size: 14.5px;
+            line-height: 1;
+            color: {text_fg};
+            letter-spacing: 0.2px;
+        }}
+
+        /* Role specific classes */
+        .sender.user {{ color: #1a73e8; }}
+        .sender.assistant {{ color: {text_fg}; }}
+
         /* Scope all markdown output inside .md-root to stabilize font metrics */
         .md-root {{
             color: {text_fg};
             font-family: 'Segoe UI', Arial, sans-serif;
-            font-size: 14px;
-            line-height: 1.55;
+            font-size: 13px;
+            line-height: 1.45;
+            margin: 0; /* body sits directly under header */
         }}
         .md-root a {{
             color: {link_fg};
             text-decoration: underline;
-        }}
-
-        /* speaker label */
-        .sender {{
-            font-weight: 600;
-            font-size: 1.0em;
-            vertical-align: baseline;
         }}
 
         /* headings */
@@ -340,7 +358,7 @@ class ConversationView(QWidget):
             color: {text_fg};
             font-weight: 600;
             line-height: 1.25;
-            margin: 0.6em 0 0.3em;  /* slightly tighter */
+            margin: 0.6em 0 0.3em;
         }}
         .md-root h1 {{ font-size: 1.25em; }}
         .md-root h2 {{ font-size: 1.18em; }}
@@ -353,51 +371,44 @@ class ConversationView(QWidget):
         .md-root p {{ margin: 0.3em 0; }}
         .md-root ul, .md-root ol {{ margin: 0.3em 0 0.3em 1.2em; }}
 
-        /* Enhanced code blocks with better visibility */
+        /* Enhanced code blocks */
         .md-root pre {{
             background   : {code_bg};
-            border       : 2px solid {code_border};  /* Thicker border */
-            border-radius: 8px;  /* More rounded corners */
-            padding      : 12px 16px;  /* More padding */
+            border       : 2px solid {code_border};
+            border-radius: 8px;
+            padding      : 12px 16px;
             white-space  : pre;
             font-family  : 'Cascadia Code', 'Consolas', 'Courier New', monospace;
-            margin       : 0.5em 0;   /* More margin for separation */
-            font-size    : 0.95em;  /* Slightly larger font */
+            margin       : 0.5em 0;
+            font-size    : 0.95em;
             overflow-x   : auto;
-            box-shadow   : 0 2px 4px {code_block_shadow};  /* Subtle shadow for depth */
-            color        : {code_fg};  /* Distinct code color */
-            line-height  : 1.6;  /* Better line spacing for readability */
-        }}
-        
-        /* Add a subtle left border accent for code blocks */
-        .md-root pre {{
+            box-shadow   : 0 2px 4px {code_block_shadow};
+            color        : {code_fg};
+            line-height  : 1.6;
             border-left: 4px solid {"#4ea1ff" if dark else "#0066cc"};
         }}
 
-        /* Enhanced inline code */
         .md-root code {{
             background   : {inline_code_bg};
             border       : 1px solid {code_border};
             border-radius: 4px;
-            padding      : 2px 6px;  /* More horizontal padding */
+            padding      : 2px 6px;
             font-family  : 'Cascadia Code', 'Consolas', 'Courier New', monospace;
             font-size    : 0.92em;
             color        : {code_fg};
-            font-weight  : 500;  /* Slightly bolder */
-            white-space  : nowrap;  /* Prevent wrapping in inline code */
+            font-weight  : 500;
+            white-space  : nowrap;
         }}
-        
-        /* Remove double styling when code is inside pre */
+
         .md-root pre code {{
             background   : transparent;
             border       : none;
             padding      : 0;
-            font-size    : 1em;  /* Reset to parent size */
+            font-size    : 1em;
             font-weight  : normal;
-            white-space  : pre;  /* Allow wrapping in code blocks */
+            white-space  : pre;
         }}
-        
-        /* Syntax highlighted code blocks from codehilite */
+
         .md-root .codehilite {{
             background   : {code_bg};
             border       : 2px solid {code_border};
@@ -408,22 +419,11 @@ class ConversationView(QWidget):
             overflow-x   : auto;
             box-shadow   : 0 2px 4px {code_block_shadow};
         }}
-        
-        .md-root .codehilite pre {{
-            background   : transparent;
-            border       : none;
-            padding      : 0;
-            margin       : 0;
-            box-shadow   : none;
-            border-left  : none;
-        }}
 
-        /* tables */
         .md-root table {{ border-collapse: collapse; width: 100%; margin: 0.35em 0; }}
         .md-root th, .md-root td {{ border: 1px solid {subtle_border}; padding: 6px 8px; }}
         .md-root th {{ background: {tbl_header_bg}; }}
 
-        /* quotes and rules */
         .md-root blockquote {{
             margin      : 0.35em 0;
             padding     : 6px 10px;
@@ -433,7 +433,7 @@ class ConversationView(QWidget):
         .md-root hr {{
             border: none;
             border-top: 1px solid {subtle_border};
-            margin: 8px 0;  /* tighter */
+            margin: 8px 0;
         }}
 
         .md-root img {{ max-width: 100%; height: auto; }}
@@ -594,14 +594,24 @@ class ConversationView(QWidget):
             # Intentionally no restore here to avoid flash.
 
     def _render_text_item(self, sender: str, color: str, message: str) -> None:
-        header_html = f"<span class='sender' style='color:{color};'>{html.escape(sender)}:</span> "
+        role_class = "user" if sender and sender.lower() == "user" else "assistant"
+
+        header_html = (
+            f"<div class='msg-header'>"
+            f"<span class='sender {role_class}' style='color:{color};'>{html.escape(sender)}</span>"
+            f"</div>"
+        )
+
         if self._markdown_enabled:
             body_html = f"<div class='md-root'>{self.render_markdown_to_html(message)}</div>"
         else:
             body_html = f"<div class='md-root'><pre>{html.escape(message)}</pre></div>"
+
+        message_html = f"<div class='message'>{header_html}{body_html}</div>"
+
         self.conversationView.moveCursor(QTextCursor.End)
-        # single break instead of two to reduce vertical spacing
-        self.conversationView.insertHtml(header_html + body_html + "<br>")
+        # Insert the composed message block and one line break
+        self.conversationView.insertHtml(message_html + "<br>")
 
     def _render_image_item(self, image_path: str) -> None:
         base64_image = self.convert_image_to_base64(image_path)
@@ -621,15 +631,22 @@ class ConversationView(QWidget):
                 # Start header and create an empty streaming region we will update
                 self.conversationView.moveCursor(QTextCursor.End)
                 header_color = "#D3D3D3" if self.is_dark_mode() else "black"
-                header_html = f"<span class='sender' style='color:{header_color};'>{html.escape(sender)}:</span> "
+                role_class = "user" if sender and sender.lower() == "user" else "assistant"
+                header_html = (
+                    f"<div class='msg-header'>"
+                    f"<span class='sender {role_class}' style='color:{header_color};'>{html.escape(sender)}</span>"
+                    f"</div>"
+                )
+
                 cursor = self.conversationView.textCursor()
                 header_start = cursor.position()
+                # insert header (message wrapper will be completed by the streaming body)
                 self.conversationView.insertHtml(header_html)
                 # region starts after header
                 start_cursor = self.conversationView.textCursor()
                 start_pos = start_cursor.position()
                 # insert empty placeholder to establish an end pos
-                self.conversationView.insertHtml("")
+                self.conversationView.insertHtml("")  # placeholder for streaming body
                 end_pos = self.conversationView.textCursor().position()
                 self.stream_regions[sender] = {"header_start": header_start, "start": start_pos, "end": end_pos}
                 self.streaming_buffer[sender].clear()

@@ -57,24 +57,24 @@ class AssistantItemWidget(QWidget):
 
 
 class RenameDialog(QDialog):
-    
+
     def __init__(self, current_name, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Rename Thread")
         self.setModal(True)
         self.setFixedWidth(400)
-        
+
         layout = QVBoxLayout(self)
-        
+
         # Label
         label = QLabel("Enter new name for the thread:")
         layout.addWidget(label)
-        
+
         # Input field
         self.name_input = QLineEdit(current_name)
         self.name_input.selectAll()
         layout.addWidget(self.name_input)
-        
+
         # Buttons
         buttons = QDialogButtonBox(
             QDialogButtonBox.Ok | QDialogButtonBox.Cancel,
@@ -83,7 +83,7 @@ class RenameDialog(QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
-    
+
     def get_new_name(self):
         return self.name_input.text().strip()
 
@@ -102,13 +102,13 @@ class CustomListWidget(QListWidget):
     def contextMenuEvent(self, event):
         context_menu = QMenu(self)
         current_item = self.currentItem()
-        
+
         # Add rename action at the top if an item is selected
         if current_item:
             rename_action = context_menu.addAction("Rename Thread")
             rename_action.triggered.connect(lambda: self.rename_item(current_item))
             context_menu.addSeparator()
-        
+
         # Keep all existing file attachment actions
         attach_file_search_action = context_menu.addAction("Attach File for File Search")
         attach_file_code_action = context_menu.addAction("Attach File for Code Interpreter")
@@ -148,19 +148,19 @@ class CustomListWidget(QListWidget):
     def rename_item(self, item):
         if not item:
             return
-        
+
         current_name = item.text()
         dialog = RenameDialog(current_name, self)
-        
+
         if dialog.exec() == QDialog.Accepted:
             new_name = dialog.get_new_name()
-            
+
             if new_name and new_name != current_name:
                 # Find the parent sidebar widget
                 parent = self.parent()
                 while parent and not hasattr(parent, 'update_thread_name'):
                     parent = parent.parent()
-                
+
                 if parent and hasattr(parent, 'update_thread_name'):
                     success = parent.update_thread_name(current_name, new_name)
                     if success:
@@ -329,7 +329,7 @@ class CustomListWidget(QListWidget):
     def is_thread_selected(self, thread_name):
         """Check if the given thread name is the selected thread."""
         return self.get_current_text() == thread_name
-    
+
     def get_last_thread_name(self):
         """Return the name of the last thread in the list."""
         if self.count() > 0:
@@ -432,6 +432,11 @@ class ConversationSidebar(QWidget):
         """)
         self.on_ai_client_type_changed(self.aiClientComboBox.currentIndex())
         self.assistant_checkbox_toggled.connect(self.main_window.handle_assistant_checkbox_toggled)
+
+        # Keep strong references to background workers so they are not garbage-collected
+        # while still running. This prevents occasional crashes where a worker is
+        # collected and its signals or resources lead to invalid accesses on the main thread.
+        self._active_workers = []
 
     def keyPressEvent(self, event):
         if event.key() in (Qt.Key_Delete, Qt.Key_Backspace):
@@ -761,18 +766,41 @@ class ConversationSidebar(QWidget):
             thread_names=thread_names,
             main_window=self.main_window
         )
+
+        # Keep a strong reference to the worker so it is not garbage-collected while running.
+        # This prevents crashes that can occur if the worker object is collected and its
+        # signal handlers or resources are accessed by the Qt main thread.
+        if not hasattr(self, "_active_workers"):
+            self._active_workers = []
+        self._active_workers.append(worker)
+
         # When a thread is about to be deleted, show 'Deleting <thread_name>'
         worker.signals.status_update.connect(self.on_delete_thread_status_update)
-        # When deletion is done, refresh the thread list
-        worker.signals.finished.connect(lambda updated_threads:
-            self.on_delete_threads_finished(
-                updated_threads,
-                current_scroll_position,
-                current_row
-            )
-        )
-        # Handle errors
-        worker.signals.error.connect(self.on_delete_threads_error)
+
+        # When deletion is done, refresh the thread list and ensure worker is removed from active list.
+        def _on_worker_finished(updated_threads, _scroll=current_scroll_position, _row=current_row, _worker=worker):
+            try:
+                self.on_delete_threads_finished(updated_threads, _scroll, _row)
+            finally:
+                try:
+                    self._active_workers.remove(_worker)
+                except Exception:
+                    # Defensive: ignore if already removed
+                    pass
+
+        worker.signals.finished.connect(_on_worker_finished)
+
+        # Handle errors and ensure cleanup
+        def _on_worker_error(error_msg, _worker=worker):
+            try:
+                self.on_delete_threads_error(error_msg)
+            finally:
+                try:
+                    self._active_workers.remove(_worker)
+                except Exception:
+                    pass
+
+        worker.signals.error.connect(_on_worker_error)
 
         # Execute the worker in a separate thread via QThreadPool
         QThreadPool.globalInstance().start(worker)
@@ -783,7 +811,7 @@ class ConversationSidebar(QWidget):
             if not new_name or new_name.isspace():
                 logger.warning("Thread name cannot be empty")
                 return False
-            
+
             # Sanitize the name (remove any problematic characters)
             invalid_chars = ['"', '\\']  # Only escape characters that break JSON
             for char in invalid_chars:
@@ -798,7 +826,7 @@ class ConversationSidebar(QWidget):
                 if not new_name:
                     logger.warning("Thread name cannot be only whitespace")
                     return False
-            
+
             # Length validation (reasonable limit for UI display)
             if len(new_name) > 255:
                 logger.warning("Thread name is too long (max 255 characters)")
@@ -806,29 +834,29 @@ class ConversationSidebar(QWidget):
 
             # Get the thread client
             threads_client = ConversationThreadClient.get_instance(self._ai_client_type)
-            
+
             # Check if old thread exists
             all_threads = threads_client.get_conversation_threads()
             old_thread = next((t for t in all_threads if t['thread_name'] == old_name), None)
             if not old_thread:
                 logger.error(f"Thread '{old_name}' not found")
                 return False
-            
+
             # Check if new name would be unique (excluding current thread)
             existing_names = [t['thread_name'] for t in all_threads if t['thread_name'] != old_name]
             if new_name in existing_names:
                 logger.warning(f"Thread name '{new_name}' already exists")
                 return False
-            
+
             # Update the thread name using the client
             updated_name = threads_client.set_conversation_thread_name(new_name, old_name)
-            
+
             # Save the configuration
             threads_client.save_conversation_threads()
-            
+
             logger.info(f"Successfully renamed thread from '{old_name}' to '{updated_name}'")
             return True
-            
+
         except Exception as e:
             logger.error(f"Failed to rename thread from '{old_name}' to '{new_name}': {e}")
             return False
