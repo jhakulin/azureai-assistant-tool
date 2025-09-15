@@ -30,6 +30,12 @@ class AssistantsMenu:
         self.assistants_menu = self.main_window.menuBar().addMenu("&Assistants")
         self.function_config_manager = FunctionConfigManager.get_instance()
         self.assistant_client_manager = AssistantClientManager.get_instance()
+
+        # Keep strong references to background workers so they are not
+        # garbage-collected while still running. Prevents crashes from
+        # QRunnable objects being collected while Qt signals are live.
+        self._active_workers = []
+
         self.create_assistants_menu()
 
     def create_assistants_menu(self):
@@ -42,7 +48,7 @@ class AssistantsMenu:
             createAssistantAction = QAction('Create New / Edit OpenAI Assistant', self.main_window)
             createAssistantAction.triggered.connect(self.create_new_edit_assistant)
             self.assistants_menu.addAction(createAssistantAction)
-            
+
             createChatAssistantAction = QAction('Create New / Edit Chat Assistant', self.main_window)
             createChatAssistantAction.triggered.connect(self.create_new_edit_chat_assistant)
             self.assistants_menu.addAction(createChatAssistantAction)
@@ -50,7 +56,7 @@ class AssistantsMenu:
             createAzureAIAgentAction = QAction('Create New / Edit Azure AI Agent', self.main_window)
             createAzureAIAgentAction.triggered.connect(self.create_new_edit_azure_ai_agent)
             self.assistants_menu.addAction(createAzureAIAgentAction)
-        
+
         exportAction = QAction('Export', self.main_window)
         exportAction.triggered.connect(self.export_assistant)
         self.assistants_menu.addAction(exportAction)
@@ -101,14 +107,18 @@ class AssistantsMenu:
             main_window=self.main_window,
             assistant_client_manager=self.assistant_client_manager,
         )
-        worker.signals.finished.connect(self.on_assistant_config_submit_finished)
-        worker.signals.error.connect(self.on_assistant_config_submit_error)
+
+        # Keep a strong reference to avoid it being garbage-collected
+        self._active_workers.append(worker)
+
+        worker.signals.finished.connect(lambda result, w=worker: self.on_assistant_config_submit_finished(result, w))
+        worker.signals.error.connect(lambda error_msg, w=worker: self.on_assistant_config_submit_error(error_msg, w))
 
         self.dialog.start_processing_signal.start_signal.emit(ActivityStatus.PROCESSING)
         # Execute the worker in a separate thread using QThreadPool
         QThreadPool.globalInstance().start(worker)
 
-    def on_assistant_config_submit_finished(self, result):
+    def on_assistant_config_submit_finished(self, result, worker=None):
         assistant_client, realtime_audio, assistant_name, ai_client_type = result
         self.assistant_client_manager.register_client(
             name=assistant_name,
@@ -121,11 +131,24 @@ class AssistantsMenu:
         self.main_window.conversation_sidebar.load_assistant_list(client_type)
         self.dialog.update_assistant_combobox()
 
-    def on_assistant_config_submit_error(self, error_msg):
+        # Remove worker reference so it can be GC'd
+        if worker in self._active_workers:
+            try:
+                self._active_workers.remove(worker)
+            except ValueError:
+                pass
+
+    def on_assistant_config_submit_error(self, error_msg, worker=None):
         self.dialog.stop_processing_signal.stop_signal.emit(ActivityStatus.PROCESSING)
         # Show error using a message box on the main thread.
         QMessageBox.warning(self.main_window, "Error",
                             f"An error occurred while creating/updating the assistant: {error_msg}")
+        # Remove worker reference so it can be GC'd
+        if worker in self._active_workers:
+            try:
+                self._active_workers.remove(worker)
+            except ValueError:
+                pass
 
     def export_assistant(self):
         dialog = ExportAssistantDialog(main_window=self.main_window)

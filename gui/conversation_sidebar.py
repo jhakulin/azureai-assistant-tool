@@ -469,14 +469,18 @@ class ConversationSidebar(QWidget):
             main_window=self.main_window,
             assistant_client_manager=self.assistant_client_manager
         )
-        worker.signals.finished.connect(self.on_assistant_config_submit_finished)
-        worker.signals.error.connect(self.on_assistant_config_submit_error)
+        # Keep a strong reference to the worker to avoid it being garbage-collected
+        self._active_workers.append(worker)
+
+        # Connect finished and error signals and pass the worker so slots can clean up the reference
+        worker.signals.finished.connect(lambda result, w=worker: self.on_assistant_config_submit_finished(result, w))
+        worker.signals.error.connect(lambda error_msg, w=worker: self.on_assistant_config_submit_error(error_msg, w))
 
         self.dialog.start_processing_signal.start_signal.emit(ActivityStatus.PROCESSING)
         # Execute the worker in a separate thread using QThreadPool
         QThreadPool.globalInstance().start(worker)
 
-    def on_assistant_config_submit_finished(self, result):
+    def on_assistant_config_submit_finished(self, result, worker=None):
         assistant_client, realtime_audio, assistant_name, ai_client_type = result
         self.assistant_client_manager.register_client(
             name=assistant_name,
@@ -489,8 +493,23 @@ class ConversationSidebar(QWidget):
         self.main_window.conversation_sidebar.load_assistant_list(client_type)
         self.dialog.update_assistant_combobox()
 
-    def on_assistant_config_submit_error(self, error_msg):
+        # Remove strong reference to allow worker to be garbage-collected
+        if worker in self._active_workers:
+            try:
+                self._active_workers.remove(worker)
+            except ValueError:
+                pass
+
+    def on_assistant_config_submit_error(self, error_msg, worker=None):
         self.dialog.stop_processing_signal.stop_signal.emit(ActivityStatus.PROCESSING)
+
+        # Remove strong reference to allow worker to be garbage-collected
+        if worker in self._active_workers:
+            try:
+                self._active_workers.remove(worker)
+            except ValueError:
+                pass
+
         # Show error using a message box on the main thread.
         QMessageBox.warning(self.main_window, "Error",
                             f"An error occurred while creating/updating the assistant: {error_msg}")
