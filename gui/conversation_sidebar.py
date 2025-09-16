@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QFileDialog, QMessageBox,
     QSizePolicy, QAbstractItemView
 )
+from gui.thread_view_dialog import open_thread_view_dialog
 from PySide6.QtCore import Qt, Signal, QThreadPool
 from PySide6.QtGui import QFont, QIcon, QAction
 
@@ -89,6 +90,9 @@ class RenameDialog(QDialog):
 
 
 class CustomListWidget(QListWidget):
+    # Signal emitted when user requests sorting from the context menu.
+    # True = ascending, False = descending
+    sortRequested = Signal(bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -112,23 +116,72 @@ class CustomListWidget(QListWidget):
         # Keep all existing file attachment actions
         attach_file_search_action = context_menu.addAction("Attach File for File Search")
         attach_file_code_action = context_menu.addAction("Attach File for Code Interpreter")
-        attach_image_action = context_menu.addAction("Attach Image File")
+        # Image attachment through context menu removed.
+        # Paste images directly into the conversation input (ConversationInputView) instead.
+
+        # Sorting submenu for threads
+        sort_menu = context_menu.addMenu("Sort Threads")
+        sort_asc_action = sort_menu.addAction("Sort A → Z")
+        sort_desc_action = sort_menu.addAction("Sort Z → A")
 
         remove_file_menu = None
 
         if current_item:
             item_id = self._get_item_id(current_item)
             file_list = self.itemIdToFileMap.get(item_id, [])
-            if file_list:
+            # Exclude image-only attachments from the "Remove File" submenu.
+            # Image attachments are intended to be pasted/handled inline and should
+            # not be removable via this context menu.
+            non_image_files = []
+            for file_info in file_list:
+                try:
+                    if isinstance(file_info, dict):
+                        # If attachment_type explicitly says image_file, skip it
+                        if file_info.get("attachment_type") == "image_file":
+                            continue
+                    # Otherwise include the file in the list
+                    non_image_files.append(file_info)
+                except Exception:
+                    # On unexpected structure, include the item to be safe
+                    non_image_files.append(file_info)
+
+            if non_image_files:
                 remove_file_menu = context_menu.addMenu("Remove File")
-                for file_info in file_list:
-                    actual_file_path = file_info["file_path"]
-                    tool_type = (
-                        file_info["tools"][0]["type"]
-                        if file_info["tools"]
-                        else "Image"
-                    )
-                    file_label = f"{os.path.basename(actual_file_path)} ({tool_type})"
+                for file_info in non_image_files:
+                    # Safely derive a display name for the file
+                    if isinstance(file_info, dict):
+                        actual_file_path = file_info.get("file_path") or file_info.get("file_name") or ""
+                        # Determine tool_type safely from tools list if present
+                        if file_info.get("tools") and isinstance(file_info.get("tools"), list) and file_info["tools"]:
+                            first_tool = file_info["tools"][0]
+                            if isinstance(first_tool, dict):
+                                tool_type = first_tool.get("type") or "File"
+                            else:
+                                tool_type = str(first_tool)
+                        else:
+                            tool_type = "File"
+                    else:
+                        # fallback for non-dict structures
+                        actual_file_path = getattr(file_info, "file_path", None) or getattr(file_info, "file_name", None) or ""
+                        try:
+                            tools_attr = getattr(file_info, "tools", None)
+                            if isinstance(tools_attr, list) and tools_attr:
+                                first_tool = tools_attr[0]
+                                if isinstance(first_tool, dict):
+                                    tool_type = first_tool.get("type") or "File"
+                                else:
+                                    tool_type = str(first_tool)
+                            else:
+                                tool_type = "File"
+                        except Exception:
+                            tool_type = "File"
+
+                    # Choose a safe base name for label
+                    base_name = os.path.basename(actual_file_path) if actual_file_path else (file_info.get("file_name") if isinstance(file_info, dict) else (getattr(file_info, "file_name", "") or str(file_info)))
+                    if not base_name:
+                        base_name = "attachment"
+
+                    file_label = f"{base_name} ({tool_type})"
                     action = remove_file_menu.addAction(file_label)
                     action.setData(file_info)
 
@@ -139,8 +192,13 @@ class CustomListWidget(QListWidget):
                 self.attach_file_to_selected_item("file_search")
             elif selected_action == attach_file_code_action:
                 self.attach_file_to_selected_item("code_interpreter")
-            elif selected_action == attach_image_action:
-                self.attach_file_to_selected_item(None, is_image=True)
+            # Image context-menu attach removed; use paste into conversation input instead.
+            elif selected_action == sort_asc_action:
+                # Emit a signal so the container (sidebar) can handle sorting + persistence
+                self.sortRequested.emit(True)
+            elif selected_action == sort_desc_action:
+                # Emit a signal so the container (sidebar) can handle sorting + persistence
+                self.sortRequested.emit(False)
             elif remove_file_menu and isinstance(selected_action, QAction) and selected_action.parent() == remove_file_menu:
                 file_info = selected_action.data()
                 self.remove_specific_file_from_selected_item(file_info, current_item)
@@ -219,11 +277,29 @@ class CustomListWidget(QListWidget):
                     self.update_item_icon(item, self.itemIdToFileMap[item_id])
 
     def update_item_icon(self, item, files):
-        """Updates the list item's icon based on whether there are attached files."""
-        if files:
-            item.setIcon(QIcon("gui/images/paperclip_icon.png"))
-        else:
+        """Updates the list item's icon based on whether there are attached files.
+        If every attachment dictionary has attachment_type == 'image_file', do not show the paperclip.
+        """
+        if not files:
             item.setIcon(QIcon())
+            return
+
+        all_images = True
+        for f in files:
+            if isinstance(f, dict):
+                if f.get('attachment_type') != 'image_file':
+                    all_images = False
+                    break
+            else:
+                # Unknown structure: conservatively treat as non-image so the paperclip is shown.
+                all_images = False
+                break
+
+        if all_images:
+            # Only image attachments -> do not show paperclip
+            item.setIcon(QIcon())
+        else:
+            item.setIcon(QIcon("gui/images/paperclip_icon.png"))
 
     def get_attachments_for_selected_item(self):
         """Return the details of files attached to the currently selected item."""
@@ -272,15 +348,17 @@ class CustomListWidget(QListWidget):
             self.update_item_with_attachments(item, attachments)
 
     def update_item_with_attachments(self, item, attachments):
-        """Update the given item with a paperclip icon if there are attachments."""
-        if attachments:
-            item.setIcon(QIcon("gui/images/paperclip_icon.png"))
-        else:
-            item.setIcon(QIcon())
+        """Update the given item with a paperclip icon if there are attachments.
 
-        # Store complete attachment information in the mapping
+        Use the centralized update_item_icon() so the UI logic for when to show
+        the paperclip is consistent (e.g. hide for image-only attachments).
+        """
+        # Store complete attachment information in the mapping first
         item_id = self._get_item_id(item)
-        self.itemIdToFileMap[item_id] = attachments[:]
+        self.itemIdToFileMap[item_id] = attachments[:] if attachments is not None else []
+
+        # Update icon according to the attachments' types/paths
+        self.update_item_icon(item, attachments)
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_F2:
@@ -304,6 +382,34 @@ class CustomListWidget(QListWidget):
             self.setCurrentRow(previousRow)
         elif self.count() > 0:
             self.setCurrentRow(self.count() - 1)
+
+    def sort_threads_by_name(self, ascending: bool = True):
+        """
+        Delegate sorting request to the ConversationSidebar owner (if present).
+        If the parent sidebar implements sorting, call it. Otherwise fallback
+        to a simple alphabetical sort of the QListWidget items themselves.
+        """
+        # Try delegating to a parent that owns the thread list (ConversationSidebar)
+        parent = self.parent()
+        while parent and not hasattr(parent, 'sort_threads_by_name'):
+            parent = parent.parent()
+        if parent and hasattr(parent, 'sort_threads_by_name'):
+            try:
+                parent.sort_threads_by_name(ascending=ascending)
+                return
+            except Exception as e:
+                logger.warning(f"Delegated sort failed: {e}")
+
+        # Fallback: sort items locally within this QListWidget (no attachment preservation)
+        try:
+            names = [self.item(i).text() for i in range(self.count()) if self.item(i) is not None]
+            names.sort(reverse=not ascending)
+            self.clear()
+            for name in names:
+                self.addItem(QListWidgetItem(name))
+        except Exception as e:
+            logger.error(f"Failed to sort threads locally: {e}")
+            QMessageBox.warning(self, "Error", f"Failed to sort threads: {e}")
 
     def get_current_text(self):
         """Return the text of the currently selected item."""
@@ -392,10 +498,13 @@ class ConversationSidebar(QWidget):
             }
         """)
         self.threadList.setFont(QFont("Arial", 11))
+        # Connect the sortRequested signal so the sidebar performs sorting (and persistence)
+        self.threadList.sortRequested.connect(self.sort_threads_by_name)
 
         self.addThreadButton.clicked.connect(self.on_add_thread_button_clicked)
         self.cancelRunButton.clicked.connect(self.main_window.on_cancel_run_button_clicked)
         self.threadList.itemClicked.connect(self.select_conversation_thread_by_item)
+        self.threadList.itemDoubleClicked.connect(self.on_thread_double_clicked)
         self.threadList.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
 
         self.assistantList = QListWidget(self)
@@ -437,6 +546,61 @@ class ConversationSidebar(QWidget):
         # while still running. This prevents occasional crashes where a worker is
         # collected and its signals or resources lead to invalid accesses on the main thread.
         self._active_workers = []
+
+    def sort_threads_by_name(self, ascending: bool = True):
+        """
+        Sort the sidebar's threadList items by their visible text (thread name).
+        Preserves the mapping of item IDs stored in Qt.UserRole so attachments
+        remain associated with the same thread item after reordering.
+        Also persists the sorted order to the ConversationThreadConfig JSON so
+        subsequent reloads will respect the chosen order.
+        """
+        try:
+            # Build a map of current thread name -> (item_id, tooltip)
+            name_map = {}
+            for i in range(self.threadList.count()):
+                it = self.threadList.item(i)
+                if it is None:
+                    continue
+                item_id = it.data(Qt.UserRole)
+                tooltip = it.toolTip() if hasattr(it, "toolTip") else ""
+                name_map[it.text()] = (item_id, tooltip)
+
+            # Try to persist sorted order in the thread config, and fetch the canonical list of threads.
+            try:
+                threads_client = ConversationThreadClient.get_instance(self._ai_client_type)
+                config = threads_client.get_config()
+                if config is not None:
+                    # This will reorder config._threads and persist to JSON
+                    config.sort_threads_by_name(ascending=ascending, persist=True)
+                    threads = config.get_all_threads()
+                else:
+                    # Fallback to sorting current names if config is not available
+                    threads = [{"thread_name": name} for name in sorted(name_map.keys(), key=lambda n: n.lower(), reverse=not ascending)]
+            except Exception as ex:
+                logger.warning(f"Could not persist sort order to thread config: {ex}")
+                # Fallback to sorting current names in memory
+                threads = [{"thread_name": name} for name in sorted(name_map.keys(), key=lambda n: n.lower(), reverse=not ascending)]
+
+            # Rebuild the threadList preserving item ids and tooltips when possible
+            self.threadList.clear()
+            for entry in threads:
+                thread_name = entry.get("thread_name")
+                if thread_name is None:
+                    continue
+                item_id, tooltip = name_map.get(thread_name, (None, None))
+                new_item = QListWidgetItem(thread_name)
+                if item_id is not None:
+                    new_item.setData(Qt.UserRole, item_id)
+                if tooltip:
+                    new_item.setToolTip(tooltip)
+                self.threadList.addItem(new_item)
+
+            # Keep selection cleared after sort
+            self.threadList.clearSelection()
+        except Exception as e:
+            logger.error(f"Failed to sort threads: {e}")
+            QMessageBox.warning(self, "Error", f"Failed to sort threads: {e}")
 
     def keyPressEvent(self, event):
         if event.key() in (Qt.Key_Delete, Qt.Key_Backspace):
@@ -683,6 +847,18 @@ class ConversationSidebar(QWidget):
             # Multiple items selected – do nothing
             # so the user can continue shift/ctrl selection, etc.
             pass
+
+    def on_thread_double_clicked(self, item):
+        """
+        Open a separate dialog showing the thread messages in a tree view.
+        """
+        try:
+            thread_name = item.text()
+            ai_client_type = self._ai_client_type
+            # Use the convenience function from gui.thread_view_dialog to open the dialog
+            open_thread_view_dialog(parent=self.main_window, thread_name=thread_name, ai_client_type=ai_client_type, main_window=self.main_window)
+        except Exception as e:
+            QMessageBox.warning(self, "Error", f"Failed to open thread view: {e}")
 
     def select_conversation_thread_by_name(self, unique_thread_name):
         self._select_thread(unique_thread_name)

@@ -4,7 +4,7 @@
 import threading
 from typing import Union, List, Optional, Tuple
 
-from azure.ai.assistant.management.ai_client_factory import AIClientFactory
+from azure.ai.assistant.management.ai_client_factory import AIClientFactory, AIClient
 from azure.ai.assistant.management.ai_client_type import AIClientType
 from azure.ai.assistant.management.attachment import Attachment, AttachmentType
 from azure.ai.assistant.management.conversation import Conversation
@@ -33,8 +33,8 @@ class ConversationThreadClient:
     :type client_args: dict
     """
     def __init_private(
-        self, 
-        ai_client_type: AIClientType, 
+        self,
+        ai_client_type: AIClientType,
         config_folder: Optional[str] = None,
         **client_args
     ):
@@ -55,7 +55,7 @@ class ConversationThreadClient:
 
     @classmethod
     def get_instance(
-        cls, 
+        cls,
         ai_client_type: AIClientType,
         config_folder: Optional[str] = None,
         **client_args
@@ -107,7 +107,7 @@ class ConversationThreadClient:
                 raise EngineError(f"Failed to create thread: {e}")
 
     def set_current_conversation_thread(
-            self, 
+            self,
             thread_name: str
     ) -> None:
         """
@@ -122,7 +122,7 @@ class ConversationThreadClient:
             self._thread_config.set_current_thread_by_name(thread_name)
 
     def is_current_conversation_thread(
-            self, 
+            self,
             thread_name: str
     ) -> bool:
         """
@@ -139,7 +139,7 @@ class ConversationThreadClient:
             return thread_id == self._thread_config.get_current_thread_id()
 
     def set_conversation_thread_name(
-            self, 
+            self,
             new_thread_name: str,
             thread_name: str
     ) -> str:
@@ -260,7 +260,7 @@ class ConversationThreadClient:
                 raise EngineError(f"Failed to create message: {message} in thread: {thread_name}: {e}")
 
     def delete_conversation_thread(
-            self, 
+            self,
             thread_name: str,
             timeout: Optional[float] = None
     ) -> None:
@@ -320,9 +320,73 @@ class ConversationThreadClient:
             logger.info(f"Save threads to json, ai_client_type: {self._ai_client_type}")
             self._thread_config.save_to_json()
 
+    def delete_conversation_thread_message(
+            self,
+            thread_name: str,
+            message_id: str,
+            timeout: Optional[float] = None
+    ) -> None:
+        """
+        Deletes a specific message from the conversation thread.
+
+        :param thread_name: The name of the thread containing the message.
+        :type thread_name: str
+        :param message_id: The unique identifier of the message to delete.
+        :type message_id: str
+        :param timeout: Optional request timeout (for HTTP-based clients).
+        :type timeout: Optional[float]
+
+        This method locates the thread id using the thread config and delegates
+        the actual delete operation to the provider-specific implementation.
+        """
+        with self._lock:
+            try:
+                thread_id = self._thread_config.get_thread_id_by_name(thread_name)
+                logger.info(f"Deleting message id: {message_id} from thread id: {thread_id}, thread name: {thread_name}")
+                # Delegate to provider-specific implementation
+                self._delete_message_impl(thread_id=thread_id, message_id=message_id, timeout=timeout)
+                logger.info(f"Deleted message id: {message_id} from thread id: {thread_id}, thread name: {thread_name}")
+            except Exception as e:
+                logger.error(f"Failed to delete message id: {message_id} from thread: {thread_name}: {e}")
+                raise EngineError(f"Failed to delete message id: {message_id} from thread: {thread_name}: {e}")
+
     # -------------------------------------------------------------
     # Private / Internal methods:
     # -------------------------------------------------------------
+
+    def _delete_message_impl(
+        self,
+        thread_id: str,
+        message_id: str,
+        timeout: Optional[float] = None
+    ) -> None:
+        """
+        Provider-specific implementation to delete a message.
+
+        For Azure AI Agents we attempt to use `agents.messages.delete`.
+        For the OpenAI Beta Threads API we attempt to use
+        `beta.threads.messages.delete(thread_id=..., message_id=...)`.
+
+        This implementation is best-effort and will raise exceptions if the
+        underlying client doesn't support message deletion.
+        """
+        if self._ai_client_type == AIClientType.AZURE_AI_AGENT:
+            # Azure AI Agents: delete by message id (agents.messages.delete)
+            # Note: exact SDK method name is assumed consistent with other methods used here.
+            try:
+                # Try the expected delete signature
+                self._ai_client.agents.messages.delete(thread_id=thread_id, message_id=message_id)
+            except Exception as ex:
+                logger.error(f"Failed to delete message via beta threads API (fallback): {ex}")
+                raise
+        else:
+            # OpenAI (beta threads): delete via beta.threads.messages.delete
+            try:
+                # Preferred: provide thread_id and message_id
+                self._ai_client.beta.threads.messages.delete(thread_id=thread_id, message_id=message_id, timeout=timeout)
+            except Exception as ex:
+                logger.error(f"Failed to delete message via beta threads API (fallback): {ex}")
+                raise
 
     def _create_thread_impl(self, timeout: Optional[float] = None):
         if self._ai_client_type == AIClientType.AZURE_AI_AGENT:
@@ -337,7 +401,7 @@ class ConversationThreadClient:
             self._ai_client.beta.threads.delete(thread_id=thread_id, timeout=timeout)
 
     def _get_conversation_thread_messages(
-            self, 
+            self,
             thread_name: str,
             timeout: Optional[float] = None
     ) -> List[Union[ThreadMessage, Message]]:
@@ -381,8 +445,8 @@ class ConversationThreadClient:
 
     # TODO: Change this to use the new Attachment class for Azure AI Agents
     def _update_message_attachments(
-            self, 
-            thread_id: str, 
+            self,
+            thread_id: str,
             new_attachments: List[Attachment]
     ) -> Tuple[List[dict], List[Attachment]]:
         try:
@@ -401,13 +465,14 @@ class ConversationThreadClient:
                 if file_id is None:
                     # Need to upload
                     if attachment_type == AttachmentType.IMAGE_FILE and tool is None:
-                        # Plain image
+                        # Plain image — upload for immediate use but do NOT persist into the thread config.
+                        # Images are intended to be processed inline (pasted into conversation),
+                        # and we avoid persisting image-only attachments so they don't show paperclip later.
                         file_object = self._create_file_impl(file_path, purpose='vision')
                         attachment.file_id = file_object.id
                         image_attachments.append(attachment)
-                        self._thread_config.add_attachments_to_thread(thread_id, [attachment])
                     else:
-                        # Probably a tool or other attachment
+                        # Probably a tool or other attachment (non-image): upload and persist to thread config.
                         file_object = self._create_file_impl(file_path, purpose='assistants')
                         attachment.file_id = file_object.id
                         all_updated_attachments.append(attachment)

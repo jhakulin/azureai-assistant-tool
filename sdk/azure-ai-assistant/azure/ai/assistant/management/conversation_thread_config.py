@@ -19,7 +19,7 @@ class ConversationThreadConfig:
     :type config_file: str
     """
     def __init__(
-            self, 
+            self,
             ai_client_type: AIClientType,
             config_folder : Optional[str] = None,
     ) -> None:
@@ -37,7 +37,7 @@ class ConversationThreadConfig:
     def add_thread(self, thread_id, thread_name) -> None:
         """
         Add a new thread, ensuring the thread name is unique.
-        
+
         :param thread_id: The ID of the thread.
         :type thread_id: str
         :param thread_name: The name of the thread.
@@ -50,7 +50,7 @@ class ConversationThreadConfig:
     def remove_thread_by_name(self, thread_name) -> None:
         """
         Remove a thread by its name.
-        
+
         :param thread_name: The name of the thread.
         :type thread_name: str
         """
@@ -69,7 +69,7 @@ class ConversationThreadConfig:
     def remove_thread_by_id(self, thread_id) -> None:
         """
         Remove a thread by its ID.
-        
+
         :param thread_id: The ID of the thread.
         :type thread_id: str
         """
@@ -82,7 +82,7 @@ class ConversationThreadConfig:
     def set_current_thread_by_name(self, thread_name) -> None:
         """
         Set the current thread by its name.
-        
+
         :param thread_name: The name of the thread.
         :type thread_name: str
         """
@@ -94,7 +94,7 @@ class ConversationThreadConfig:
     def set_current_thread_by_id(self, thread_id) -> None:
         """
         Set the current thread by its ID.
-        
+
         :param thread_id: The ID of the thread.
         :type thread_id: str
         """
@@ -104,7 +104,7 @@ class ConversationThreadConfig:
     def update_thread_name(self, thread_id, new_thread_name) -> None:
         """
         Update the name of a thread ensuring the new name is unique.
-        
+
         :param thread_id: The ID of the thread.
         :type thread_id: str
         :param new_thread_name: The new name of the thread.
@@ -115,6 +115,26 @@ class ConversationThreadConfig:
             if thread['thread_id'] == thread_id:
                 thread['thread_name'] = unique_thread_name
                 break
+
+    def sort_threads_by_name(self, ascending: bool = True, persist: bool = True) -> None:
+        """
+        Sort the internal thread list by the thread display name.
+
+        :param ascending: If True, sort A→Z; if False, sort Z→A.
+        :type ascending: bool
+        :param persist: If True, persist the sorted order to the config JSON file.
+                        If False, only reorder in memory.
+        :type persist: bool
+        """
+        try:
+            # Stable sort by thread_name (case-insensitive)
+            self._threads.sort(key=lambda t: (t.get('thread_name') or "").lower(), reverse=not ascending)
+            if persist:
+                # Persist the new order to JSON
+                self.save_to_json()
+        except Exception as e:
+            logger.error(f"Failed to sort threads: {e}")
+            # Don't raise here to avoid breaking callers; caller can show UI warnings as needed.
 
     def _generate_unique_thread_name(self, desired_name) -> str:
         if not any(thread['thread_name'] == desired_name for thread in self._threads):
@@ -128,7 +148,7 @@ class ConversationThreadConfig:
     def get_thread_id_by_name(self, thread_name) -> str:
         """
         Get the thread ID for a given thread name.
-        
+
         :param thread_name: The name of the thread.
         :type thread_name: str
 
@@ -143,7 +163,7 @@ class ConversationThreadConfig:
     def get_thread_name_by_id(self, thread_id) -> str:
         """
         Get the name of a thread by its ID.
-        
+
         :param thread_id: The ID of the thread.
         :type thread_id: str
 
@@ -158,7 +178,7 @@ class ConversationThreadConfig:
     def get_current_thread_id(self) -> str:
         """
         Get the current thread ID.
-        
+
         :return: The ID of the current thread.
         :rtype: str
         """
@@ -176,7 +196,7 @@ class ConversationThreadConfig:
     def get_all_thread_ids(self) -> list:
         """
         Get a list of all thread ids.
-        
+
         :return: A list of all thread ids.
         :rtype: list
         """
@@ -185,7 +205,7 @@ class ConversationThreadConfig:
     def get_all_threads(self) -> list:
         """
         Get a list of all threads for the specific ai_client_type.
-        
+
         :return: A list of all threads.
         :rtype: list
         """
@@ -212,7 +232,7 @@ class ConversationThreadConfig:
     def add_attachments_to_thread(self, thread_id: str, attachments: List[Attachment]) -> None:
         """
         Add attachments to a specific thread. Each attachment is an instance of Attachment.
-        
+
         :param thread_id: The ID of the thread.
         :type thread_id: str
         :param attachments: A list of Attachment instances to add to the thread.
@@ -233,7 +253,7 @@ class ConversationThreadConfig:
     def remove_attachment_from_thread(self, thread_id: str, file_id_to_remove: str) -> None:
         """
         Remove a specific attachment from a thread by its file_id.
-        
+
         :param thread_id: The ID of the thread.
         :type thread_id: str
         :param file_id_to_remove: The file_id of the attachment to remove.
@@ -247,7 +267,7 @@ class ConversationThreadConfig:
     def remove_attachments_from_thread(self, thread_id: str, file_ids_to_remove: List[str]) -> None:
         """
         Remove specific attachments from a thread by their file_id.
-        
+
         :param thread_id: The ID of the thread.
         :type thread_id: str
         :param file_ids_to_remove: A list of file_ids to remove from the thread.
@@ -261,7 +281,7 @@ class ConversationThreadConfig:
     def get_attachments_of_thread(self, thread_id: str) -> List[Attachment]:
         """
         Get the list of attachments associated with a specific thread.
-        
+
         :param thread_id: The ID of the thread.
         :type thread_id: str
 
@@ -276,7 +296,7 @@ class ConversationThreadConfig:
     def set_attachments_of_thread(self, thread_id: str, attachments: List[Attachment]) -> None:
         """
         Set the attachments for a specific thread.
-        
+
         :param thread_id: The ID of the thread.
         :type thread_id: str
         :param attachments: A list of Attachment instances to set for the thread.
@@ -290,7 +310,7 @@ class ConversationThreadConfig:
     def update_attachment_in_thread(self, thread_id: str, attachment: Attachment) -> None:
         """
         Update an attachment in a specific thread.
-        
+
         :param thread_id: The ID of the thread.
         :type thread_id: str
         :param attachment: The Attachment instance to update.
@@ -323,7 +343,7 @@ class ConversationThreadConfig:
 
         # Ensure the directory exists
         os.makedirs(os.path.dirname(self._config_file), exist_ok=True)
-        
+
         # Read the existing configuration
         logger.info(f"Saving conversation thread configuration to {self._config_file}")
         try:

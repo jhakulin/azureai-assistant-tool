@@ -29,7 +29,7 @@ class ProcessAssistantWorker(QRunnable):
     """
     Worker thread for processing the assistant config submission.
     """
-    def __init__(self, 
+    def __init__(self,
                  assistant_config_json : dict,
                  ai_client_type: str,
                  assistant_type : str,
@@ -85,15 +85,15 @@ class ProcessAssistantWorker(QRunnable):
 
 
 def open_assistant_config_dialog(
-        parent, 
-        assistant_type=None, 
+        parent,
+        assistant_type=None,
         assistant_name=None,
-        function_config_manager=None, 
+        function_config_manager=None,
         callback=None
     ):
     """
     Create and show an AssistantConfigDialog.
-    
+
     :param parent: The parent widget.
     :param assistant_type: Optional; type of assistant (e.g., AssistantType.ASSISTANT.value).
     :param assistant_name: Optional; the name of the assistant being edited.
@@ -125,11 +125,11 @@ class LoadAssistantWorkerSignals(QObject):
 class LoadAssistantWorker(QRunnable):
     """
     Worker thread for loading assistants.
-    
+
     This worker gets the list of assistant names by client type, creates/updates the assistant client objects,
     registers them, and then emits a signal with the resulting assistant name list.
     """
-    def __init__(self, 
+    def __init__(self,
                  ai_client_type : str,
                  assistant_config_manager : AssistantConfigManager,
                  assistant_client_manager : AssistantClientManager,
@@ -205,7 +205,7 @@ class DeleteThreadsWorker(QRunnable):
     """
     Worker thread to delete multiple conversation threads asynchronously.
     """
-    def __init__(self, 
+    def __init__(self,
                  ai_client_type,
                  thread_names: list,
                  main_window):
