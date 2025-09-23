@@ -244,3 +244,61 @@ class DeleteThreadsWorker(QRunnable):
         except Exception as e:
             # If something catastrophic happened
             self.signals.error.emit(str(e))
+
+
+class DeleteMessagesWorkerSignals(QObject):
+    """
+    Signals for the DeleteMessagesWorker.
+    """
+    finished = Signal(list)             # Provides the list of successfully deleted message ids
+    error = Signal(str)                 # Sends the error message if something goes wrong
+    status_update = Signal(str)         # Sends the id of the message currently being deleted
+
+
+class DeleteMessagesWorker(QRunnable):
+    """
+    Worker thread to delete multiple messages from a single conversation thread asynchronously.
+    Emits status updates for each message id so the UI can show progress (e.g. status bar).
+    """
+    def __init__(self,
+                 ai_client_type,
+                 thread_name: str,
+                 message_ids: list,
+                 main_window):
+        super().__init__()
+        self.ai_client_type = ai_client_type
+        self.thread_name = thread_name
+        self.message_ids = message_ids or []
+        self.main_window = main_window
+        self.signals = DeleteMessagesWorkerSignals()
+
+    def run(self):
+        """
+        Perform message deletions in a separate thread.
+        """
+        try:
+            # Get the thread client for the selected AI client type
+            threads_client = ConversationThreadClient.get_instance(self.ai_client_type)
+
+            deleted_ids = []
+            for mid in self.message_ids:
+                # Emit status update for this message id so UI can reflect progress
+                try:
+                    self.signals.status_update.emit(str(mid))
+                except Exception:
+                    # Ensure that failures to emit a status update don't stop processing
+                    pass
+
+                try:
+                    threads_client.delete_conversation_thread_message(self.thread_name, mid, timeout=getattr(self.main_window, "connection_timeout", None))
+                    deleted_ids.append(mid)
+                except Exception as e:
+                    # Log and continue with remaining message deletions
+                    logger.warning(f"Error deleting message '{mid}' from thread '{self.thread_name}': {e}")
+
+            # Notify successful completion with list of deleted ids
+            self.signals.finished.emit(deleted_ids)
+
+        except Exception as e:
+            # If something catastrophic happened
+            self.signals.error.emit(str(e))

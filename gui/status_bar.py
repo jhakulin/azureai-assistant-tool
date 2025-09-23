@@ -23,7 +23,8 @@ class StatusBar:
         self.setup_status_bar()
         # Now active_statuses is a dict mapping statuses to their call counts
         self.active_statuses = {}
-        self.current_thread_name = None
+        # Generic name for the target being affected (thread, message, etc.)
+        self.current_target = None
 
     def setup_status_bar(self):
         self.processingLabel = QLabel("", self.main_window)
@@ -36,13 +37,13 @@ class StatusBar:
 
     def animate_processing_label(self):
         frames = ["   ", ".  ", ".. ", "..."]
-        
+
         if ActivityStatus.DELETING in self.active_statuses:
-            base_text = f"Deleting {self.current_thread_name or ''}"
+            base_text = f"Deleting {self.current_target or ''}"
             self.processingLabel.setText(f"{base_text}{frames[self.processingDots]}")
             self.processingDots = (self.processingDots + 1) % 4
             return
-        
+
         if ActivityStatus.PROCESSING in self.active_statuses:
             base_text = "Processing"
             self.processingLabel.setText(f"{base_text}{frames[self.processingDots]}")
@@ -56,8 +57,8 @@ class StatusBar:
                 ActivityStatus.PROCESSING_SCHEDULED_TASK: "Scheduled Task"
             }
             active_labels = [
-                status_labels.get(status, "") 
-                for status in self.active_statuses.keys() 
+                status_labels.get(status, "")
+                for status in self.active_statuses.keys()
                 if status in status_labels
             ]
             status_message = " | ".join(filter(None, active_labels))
@@ -66,12 +67,17 @@ class StatusBar:
         else:
             # No active statuses
             self.stop_animation()
-        
+
         self.processingDots = (self.processingDots + 1) % 4
 
-    def start_animation(self, status, interval=500, thread_name=None):
-        if status == ActivityStatus.DELETING and thread_name:
-            self.current_thread_name = thread_name
+    def start_animation(self, status, interval=500, target_name=None):
+        """
+        Start an animated status. Optionally provide a target_name which will be shown
+        for statuses that reference a target (e.g. DELETING). The target_name can be a
+        thread name, message id, or any descriptive string.
+        """
+        if status == ActivityStatus.DELETING and target_name:
+            self.current_target = target_name
 
         # Increase the counter for the given status
         if status in self.active_statuses:
@@ -99,13 +105,15 @@ class StatusBar:
         if not self.active_statuses:
             self.animation_timer.stop()
             self.processingLabel.clear()
+            # Clear the current target name when no statuses remain
+            self.current_target = None
 
     def get_widget(self):
         return self.processingLabel
-    
+
     def clear_all_statuses(self):
         self.active_statuses.clear()
         self.animation_timer.stop()
         self.processingLabel.clear()
         self.processingDots = 0
-        self.current_thread_name = None
+        self.current_target = None

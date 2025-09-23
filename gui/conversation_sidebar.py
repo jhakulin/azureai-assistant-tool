@@ -894,7 +894,7 @@ class ConversationSidebar(QWidget):
         self.main_window.status_bar.start_animation(
             ActivityStatus.DELETING,
             interval=500,
-            thread_name=thread_name
+            target_name=thread_name
         )
 
     def on_delete_threads_finished(self, updated_threads, scroll_position, row):

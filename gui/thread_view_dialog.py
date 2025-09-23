@@ -22,17 +22,19 @@ Notes:
 import os
 import traceback
 from datetime import datetime
-from typing import Optional
+
 
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QTreeWidget,
     QTreeWidgetItem, QFileDialog, QMessageBox, QTextEdit, QSplitter, QWidget
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QThreadPool
 from PySide6.QtGui import QAction
 
 from azure.ai.assistant.management.conversation_thread_client import ConversationThreadClient
 from azure.ai.assistant.management.logger_module import logger
+from gui.assistant_gui_workers import DeleteMessagesWorker
+from gui.status_bar import ActivityStatus, StatusBar
 
 
 class _ContentViewerDialog(QDialog):
@@ -121,6 +123,8 @@ class ThreadViewDialog(QDialog):
         self.tree.setRootIsDecorated(False)
         # Prevent double-click from expanding/collapsing nodes; we'll handle double-click to open content viewer.
         self.tree.setExpandsOnDoubleClick(False)
+        # Allow multiple selection so users can select and delete multiple messages
+        self.tree.setSelectionMode(QTreeWidget.ExtendedSelection)
         # Provide a context menu (right-click) for operations like Delete message and Save attachment
         self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
         self.tree.customContextMenuRequested.connect(self._on_tree_context_menu)
@@ -137,6 +141,10 @@ class ThreadViewDialog(QDialog):
 
         splitter.setSizes([600, 40])
         layout.addWidget(splitter)
+
+        # Add a local status bar for this dialog to display deletion progress
+        self.status_bar = StatusBar(self)
+        layout.addWidget(self.status_bar.get_widget())
 
     def _get_threads_client(self) -> ConversationThreadClient:
         return ConversationThreadClient.get_instance(self.ai_client_type)
@@ -315,7 +323,9 @@ class ThreadViewDialog(QDialog):
             item = self.tree.itemAt(pos)
             if item is None:
                 return
-            data = item.data(0, Qt.ItemDataRole.UserRole) or {}
+            # Prefer UserRole for top-level message metadata, but fall back to child-role (0x0100)
+            # so we correctly read data regardless of which role was used when creating the node.
+            data = item.data(0, Qt.ItemDataRole.UserRole) or item.data(0, 0x0100) or {}
             menu = None
 
             # Build context menu depending on node kind
@@ -324,11 +334,12 @@ class ThreadViewDialog(QDialog):
                 from PySide6.QtWidgets import QMenu
                 menu = QMenu(self.tree)
 
-            # If this is a top-level message (has message_obj) allow Delete
-            if data.get("message_obj") is not None:
-                delete_act = QAction("Delete Message", self.tree)
-                delete_act.triggered.connect(lambda: self._confirm_and_delete_message(item))
-                menu.addAction(delete_act)
+            # If the clicked item is a top-level message (parent is None) show a single
+            # unified delete action that deletes the currently selected top-level message(s).
+            if item.parent() is None:
+                del_act = QAction("Delete selected message(s)", self.tree)
+                del_act.triggered.connect(self._confirm_and_delete_selected_messages)
+                menu.addAction(del_act)
 
             # If this is a file/image child, add Save action (reuse existing save handlers)
             kind = data.get("kind")
@@ -350,40 +361,123 @@ class ThreadViewDialog(QDialog):
         except Exception as e:
             logger.error(f"Error showing context menu: {e}")
 
-    def _confirm_and_delete_message(self, item: QTreeWidgetItem):
+    def _confirm_and_delete_selected_messages(self):
         """
-        Confirm and delete the message referenced by the provided top-level item.
+        Delete all selected top-level messages in the tree. Prompts for confirmation.
+        Uses an asynchronous worker so the UI remains responsive and so the main window
+        status bar can show deletion progress similar to thread deletion in the sidebar.
         """
         try:
-            data = item.data(0, Qt.ItemDataRole.UserRole) or {}
-            msg_obj = data.get("message_obj")
-            if msg_obj is None:
-                QMessageBox.information(self, "Delete Message", "No message selected for deletion.")
+            selected_items = self.tree.selectedItems() or []
+            if not selected_items:
+                QMessageBox.information(self, "Delete Messages", "No messages selected for deletion.")
                 return
 
-            # Determine message id from the original message object deterministically using .id
-            original = getattr(msg_obj, "original_message", None)
-            message_id = getattr(original, "id", None) if original is not None else None
+            # Filter only top-level items (children represent attachments)
+            top_level_items = []
+            for it in selected_items:
+                # ensure it's a top-level message (parent is None)
+                if it.parent() is None:
+                    top_level_items.append(it)
 
-            if not message_id:
-                QMessageBox.warning(self, "Delete Message", "Could not determine message id for deletion.")
+            if not top_level_items:
+                QMessageBox.information(self, "Delete Messages", "No top-level messages selected for deletion.")
                 return
 
+            # Collect message ids
+            message_ids = []
+            for it in top_level_items:
+                data = it.data(0, Qt.ItemDataRole.UserRole) or {}
+                msg_obj = data.get("message_obj")
+                if not msg_obj:
+                    continue
+                original = getattr(msg_obj, "original_message", None)
+                mid = getattr(original, "id", None) if original is not None else None
+                if mid:
+                    message_ids.append(mid)
+
+            if not message_ids:
+                QMessageBox.warning(self, "Delete Messages", "Could not determine message ids for the selected messages.")
+                return
+
+            # Confirm deletion
+            ids_preview = ", ".join([str(mid) for mid in message_ids][:10])
+            more = "" if len(message_ids) <= 10 else f", and {len(message_ids)-10} more"
             reply = QMessageBox.question(self, "Confirm Delete",
-                                         f"Delete message {message_id} from thread '{self.thread_name}'?",
+                                         f"Delete {len(message_ids)} message(s) from thread '{self.thread_name}'?\nIDs: {ids_preview}{more}",
                                          QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
             if reply != QMessageBox.Yes:
                 return
 
-            # Perform deletion via ConversationThreadClient
-            client = ConversationThreadClient.get_instance(self.ai_client_type)
-            client.delete_conversation_thread_message(self.thread_name, message_id, timeout=getattr(self.main_window, "connection_timeout", None))
+            # Create and run the asynchronous delete worker so UI remains responsive.
+            worker = DeleteMessagesWorker(
+                ai_client_type=self.ai_client_type,
+                thread_name=self.thread_name,
+                message_ids=message_ids,
+                main_window=self.main_window
+            )
 
-            # Refresh view after deletion
-            self.populate_messages()
+            # Keep a strong reference to the worker to prevent GC while running.
+            if not hasattr(self, "_active_workers"):
+                self._active_workers = []
+            self._active_workers.append(worker)
+
+            # When a message id is being deleted, show 'Deleting <message_id>' in status bar
+            def _on_status_update(mid):
+                try:
+                    # Use the same ActivityStatus.DELETING to show consistent animation
+                    # Display progress in the dialog's own status bar
+                    self.status_bar.start_animation(
+                        ActivityStatus.DELETING,
+                        interval=500,
+                        target_name=str(mid)
+                    )
+                except Exception:
+                    pass
+
+            worker.signals.status_update.connect(_on_status_update)
+
+            # When deletion is complete, stop animation, refresh the view and cleanup worker ref
+            def _on_finished(deleted_ids, _worker=worker):
+                try:
+                    try:
+                        # Ensure the dialog-local status bar is fully cleared after deletion completes
+                        self.status_bar.clear_all_statuses()
+                    except Exception:
+                        pass
+                    # Refresh view after deletion
+                    self.populate_messages()
+                finally:
+                    try:
+                        self._active_workers.remove(_worker)
+                    except Exception:
+                        pass
+
+            worker.signals.finished.connect(_on_finished)
+
+            # Handle errors and stop animation
+            def _on_error(error_msg, _worker=worker):
+                try:
+                    try:
+                        self.status_bar.stop_animation(ActivityStatus.DELETING)
+                    except Exception:
+                        pass
+                    logger.error(f"Error deleting messages asynchronously: {error_msg}")
+                    QMessageBox.warning(self, "Error Deleting Messages", f"An error occurred: {error_msg}")
+                finally:
+                    try:
+                        self._active_workers.remove(_worker)
+                    except Exception:
+                        pass
+
+            worker.signals.error.connect(_on_error)
+
+            # Execute the worker in a separate thread via QThreadPool
+            QThreadPool.globalInstance().start(worker)
+
         except Exception as e:
-            logger.error(f"Failed to delete message: {e}")
-            QMessageBox.warning(self, "Error", f"Failed to delete message: {e}")
+            logger.error(f"Failed to delete selected messages: {e}\n{traceback.format_exc()}")
+            QMessageBox.warning(self, "Error", f"Failed to delete selected messages: {e}")
 
     def _save_file_message(self, file_message):
         """
